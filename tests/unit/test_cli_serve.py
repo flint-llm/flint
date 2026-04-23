@@ -31,7 +31,7 @@ def test_serve_no_ollama_prints_install_hint() -> None:
 
 def test_serve_no_ollama_mentions_install() -> None:
     with patch("flint.core.runtimes.ollama_local.is_available", return_value=False):
-        result = CliRunner(mix_stderr=False).invoke(cli, ["serve", "tinyllama"])
+        result = CliRunner().invoke(cli, ["serve", "tinyllama"])
     combined = result.output + result.stderr if hasattr(result, "stderr") else result.output
     assert any(
         kw in combined.lower()
