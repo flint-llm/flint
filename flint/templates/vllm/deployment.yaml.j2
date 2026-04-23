@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ model_name }}-{{ model_version }}
+  namespace: {{ namespace }}
+  labels:
+    app: {{ model_name }}
+    flint.dev/managed: "true"
+    flint.dev/model: "{{ model_name }}"
+    flint.dev/version: "{{ model_version }}"
+    flint.dev/runtime: "{{ runtime }}"
+spec:
+  replicas: {{ replicas }}
+  selector:
+    matchLabels:
+      app: {{ model_name }}
+      flint.dev/version: "{{ model_version }}"
+  template:
+    metadata:
+      labels:
+        app: {{ model_name }}
+        flint.dev/version: "{{ model_version }}"
+    spec:
+{% if hf_repo %}
+      initContainers:
+      - name: weights-prefetch
+        image: huggingface/downloader:latest
+        args:
+          - {{ hf_repo }}
+          - /weights
+        volumeMounts:
+        - name: weights
+          mountPath: /weights
+{% if hf_token_secret %}
+        env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ hf_token_secret }}
+              key: token
+{% endif %}
+{% endif %}
+      containers:
+      - name: vllm
+        image: {{ image }}
+        args:
+          - --model
+          - {{ hf_repo or model_name }}
+          - --served-model-name
+          - {{ model_name }}
+        ports:
+        - containerPort: {{ service_port }}
+          name: http
+        readinessProbe:
+          httpGet:
+            path: {{ readiness_path }}
+            port: {{ readiness_port }}
+          initialDelaySeconds: {{ readiness_initial_delay }}
+          periodSeconds: 10
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: {{ cpu_request }}
+            memory: {{ memory_request }}
+          limits:
+            cpu: {{ cpu_limit }}
+            memory: {{ memory_limit }}
+{% if gpu_count > 0 %}
+            {{ gpu_type }}: {{ gpu_count }}
+{% endif %}
+{% if hf_token_secret %}
+        env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ hf_token_secret }}
+              key: token
+{% endif %}
+{% if hf_repo %}
+        volumeMounts:
+        - name: weights
+          mountPath: /weights
+      volumes:
+      - name: weights
+        persistentVolumeClaim:
+          claimName: {{ model_name }}-weights
+{% endif %}

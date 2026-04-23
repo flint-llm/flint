@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ model_name }}-weights
+  namespace: {{ namespace }}
+  labels:
+    flint.dev/managed: "true"
+    flint.dev/model: "{{ model_name }}"
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
