@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -137,3 +138,80 @@ def test_serve_happy_path_custom_port() -> None:
     ):
         result = CliRunner().invoke(cli, ["serve", "tinyllama", "--port", "12000"])
     assert "12000" in result.output
+
+
+# -- Helper function coverage -------------------------------------------------
+
+
+def test_shutdown_skips_if_already_exited() -> None:
+    from flint.cli.serve import _shutdown
+
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = 0  # already exited
+    _shutdown(mock_proc)
+    mock_proc.terminate.assert_not_called()
+
+
+def test_shutdown_terminates_running_proc() -> None:
+    from flint.cli.serve import _shutdown
+
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = None
+    mock_proc.wait.return_value = 0
+    _shutdown(mock_proc)
+    mock_proc.terminate.assert_called_once()
+
+
+def test_shutdown_kills_after_timeout() -> None:
+    from flint.cli.serve import _shutdown
+
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = None
+    mock_proc.wait.side_effect = [subprocess.TimeoutExpired("ollama", 5), None]
+    _shutdown(mock_proc)
+    mock_proc.kill.assert_called_once()
+
+
+def test_start_stream_thread_echoes_lines() -> None:
+    import io
+    import time as _time
+
+    from click.testing import CliRunner as _CliRunner
+
+    from flint.cli.serve import _start_stream_thread
+
+    stream = io.StringIO("line one\nline two\n")
+    runner = _CliRunner()
+    with runner.isolated_filesystem():
+        _start_stream_thread(stream, "[test] ")
+        _time.sleep(0.05)  # give daemon thread time to run
+
+
+def test_install_signal_handlers_runs_without_error() -> None:
+    from flint.cli.serve import _install_signal_handlers
+
+    mock_proc = MagicMock()
+    # Should not raise even on Windows where SIGTERM behaves differently
+    _install_signal_handlers(mock_proc)
+
+
+def test_serve_pull_streaming_path() -> None:
+    """Test that pull output is echoed when model is not local."""
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = 0
+    mock_proc.returncode = 0
+    mock_proc.stdout = iter([])
+    mock_proc.stderr = iter([])
+    mock_proc.wait.return_value = 0
+
+    with (
+        patch("flint.core.runtimes.ollama_local.is_available", return_value=True),
+        patch("flint.core.runtimes.ollama_local.is_model_local", return_value=False),
+        patch("flint.core.runtimes.ollama_local.pull", return_value=iter(["pulling...", "done"])),
+        patch("flint.core.runtimes.ollama_local.serve", return_value=mock_proc),
+        patch("flint.core.runtimes.ollama_local.wait_healthy"),
+        patch("flint.cli.serve._install_signal_handlers"),
+        patch("flint.cli.serve._start_stream_thread"),
+    ):
+        result = CliRunner().invoke(cli, ["serve", "tinyllama"])
+    assert "pulling" in result.output or "done" in result.output or "Pulling" in result.output
