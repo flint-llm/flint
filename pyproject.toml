@@ -27,7 +27,7 @@ dev = [
 ]
 
 [project.scripts]
-flint = "flint.cli:main"
+flint = "flint.cli.main:cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -35,3 +35,6 @@ include = ["flint*"]
 
 [tool.setuptools.package-data]
 flint = ["templates/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
