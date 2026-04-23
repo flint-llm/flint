@@ -55,4 +55,5 @@ jobs:
         run: pkill ollama || true && sleep 2
 
       - name: Run E2E tests
+        # s2-verify-e2e: 2026-04-23
         run: FLINT_E2E_OLLAMA=1 pytest tests/integration/test_serve_local.py -v
