@@ -36,3 +36,15 @@ class BuildError(FlintError):
 
 class WeightsValidationError(FlintError):
     """Raised when traffic split weights are invalid (do not sum to 100)."""
+
+
+class OllamaError(FlintError):
+    """Raised when a local Ollama operation fails."""
+
+
+class OllamaNotFoundError(OllamaError):
+    """Raised when the ollama binary is not found on PATH."""
+
+
+class OllamaUnhealthyError(OllamaError):
+    """Raised when the Ollama server does not become healthy within the timeout."""
