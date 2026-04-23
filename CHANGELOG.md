@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0-dev] - Unreleased
 
 ### Added
+- CI workflow verified.
+
+### Added
 - Initial project scaffold (S0)
 - Salvaged source material from legacy Dataspine repos
 - CI with ruff, mypy, pytest
