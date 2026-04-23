@@ -196,3 +196,17 @@
 ## Questions
 
 None that require stopping. The three judgment calls above have clear decisions.
+
+---
+
+## Deferred ports
+
+Five symbols were identified in S1 as "not ported" without a session tag. Resolved here.
+
+| Symbol | Lines | Concern | Tag | Rationale |
+|---|---|---|---|---|
+| `_environment_resources` | 482-513 | CLUSTER | WONTPORT | Shells out to `kubectl top`; niche operational need that users can run directly. No value in wrapping it. |
+| `_environment_volumes` | 3079-3109 | CLUSTER | S6 | Lists PVs and PVCs — directly useful for `flint status` output in S6's operational CLI. |
+| `_service_history` | 1412-1443 | K8S_APPLY | S6 | Rollout history is part of the `flint status <model>` command scope in S6. |
+| `_service_rollback` | 1446-1489 | K8S_APPLY | S6 | `flint rollback` or a flag on `flint deploy` is a natural S6 operational command. |
+| `_service_start` | 3531-3578 | K8S_APPLY | WONTPORT | Uses the deprecated `_kube_deploy_registry` / `_kube_svc_registry` dicts that are themselves DEAD. No reusable logic remains once the registry is gone. |

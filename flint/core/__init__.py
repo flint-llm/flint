@@ -2,6 +2,9 @@
 
 S2 and S3 import from this module. Add symbols deliberately -- this is the
 stability boundary between the CLI and the orchestration logic.
+
+See CONVENTIONS.md in this directory for live coding invariants that apply
+to all modules under flint/core/.
 """
 
 from flint.core.build import pull_image as pull_image

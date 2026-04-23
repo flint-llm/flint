@@ -65,13 +65,14 @@ pytest --cov=flint/core --cov-report=term-missing   # with coverage
 - No bare `except:` — always catch specific exception types.
 - No `import pdb`.
 - All public functions in `flint/core/` need full type annotations.
+- See `flint/core/CONVENTIONS.md` for the full set of live coding invariants.
 
 ## Session state
 
 | Session | Status | Notes |
 |---------|--------|-------|
 | S0 | Complete | Repo at github.com/flint-llm/flint, CI green |
-| S1 | Complete | Monolith decomposed into 8 typed modules under flint/core/ |
+| S1 | Complete | Monolith decomposed into 8 typed modules; CONVENTIONS.md + MONOLITH_MAP.md added |
 | S2 | Not started | `flint serve` via Ollama |
 | S3 | Not started | `flint deploy` via vLLM on Kubernetes |
 | S4-S7 | Not started | See FLINT_BUILD_PLAN.md |
