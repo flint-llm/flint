@@ -11,17 +11,24 @@ See `../FLINT_ARCHITECTURE.md` and `../FLINT_BUILD_PLAN.md` for full context.
 ```
 flint/                        Python package root (also the git repo root)
 ├── flint/                    Python package
-│   ├── cli/                  Click commands (empty until S2)
-│   ├── core/                 Orchestration logic (extracted from monolith in S1)
-│   │   ├── errors.py         FlintError hierarchy
+│   ├── cli/                  Click commands
+│   │   ├── main.py           `flint` group entrypoint
+│   │   ├── version.py        `flint version`
+│   │   ├── init.py           `flint init`
+│   │   ├── serve.py          `flint serve` (local Ollama mode)
+│   │   └── _errors.py        FlintError → click error formatting
+│   ├── core/                 Orchestration logic
+│   │   ├── errors.py         FlintError hierarchy (+ OllamaError subtypes)
 │   │   ├── models.py         Pydantic v2 domain types + utility functions
 │   │   ├── templates.py      Jinja2 rendering engine
 │   │   ├── k8s_apply.py      kubectl/k8s client wrappers
 │   │   ├── cluster.py        Cluster introspection
 │   │   ├── logs.py           Pod log retrieval
 │   │   ├── routing.py        Traffic split management
-│   │   └── build.py          Image pull/push
-│   ├── runtimes/             Runtime adapters (empty until S4)
+│   │   ├── build.py          Image pull/push
+│   │   └── runtimes/
+│   │       └── ollama_local.py  Local Ollama subprocess wrapper
+│   ├── runtimes/             K8s runtime adapters (empty until S4)
 │   ├── k8s/                  (empty, reserved)
 │   ├── config/               (empty, reserved)
 │   └── templates/            Jinja2 templates shipped with package
@@ -73,9 +80,25 @@ pytest --cov=flint/core --cov-report=term-missing   # with coverage
 |---------|--------|-------|
 | S0 | Complete | Repo at github.com/flint-llm/flint, CI green |
 | S1 | Complete | Monolith decomposed into 8 typed modules; CONVENTIONS.md + MONOLITH_MAP.md added |
-| S2 | Not started | `flint serve` via Ollama |
+| S2 | Complete | `flint version`, `flint init`, `flint serve` (local Ollama mode) |
 | S3 | Not started | `flint deploy` via vLLM on Kubernetes |
 | S4-S7 | Not started | See FLINT_BUILD_PLAN.md |
+
+## Running S2 commands
+
+```bash
+flint --help                          # lists version, init, serve
+flint version                         # prints installed version
+flint init                            # scaffolds flint.toml in current dir
+flint init --force                    # overwrites existing flint.toml
+flint serve tinyllama                 # start local Ollama server (requires ollama on PATH)
+flint serve tinyllama --port 12000    # use non-default port
+```
+
+E2E test (requires Ollama installed + tinyllama pulled):
+```bash
+FLINT_E2E_OLLAMA=1 pytest tests/integration/test_serve_local.py -v
+```
 
 ## Key TODOs left in code
 
