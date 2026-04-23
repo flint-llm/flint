@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+  labels:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }} 
+    hystrix.enabled: "true"
+spec:
+  ports:
+  - name: http-nginx
+    port: 8080 
+  selector:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+---
+# This is needed for FaaS
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+  labels:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+    hystrix.enabled: "true"
+spec:
+  ports:
+  - name: http-nginx
+    port: 8080
+  selector:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}

@@ -1,0 +1,39 @@
+apiVersion: extensions/v1beta1
+kind: Deployment 
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }} 
+  labels:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+    broker: kafka 
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+        broker: kafka 
+    spec:
+      containers:
+      - name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }} 
+        image: docker.io/pipelineai/stream-kafka:1.5.0
+        imagePullPolicy: "Always"
+        env:
+        - name: DATASPINE_LOG_STREAM_TOPIC
+          value: {{ DATASPINE_LOG_STREAM_TOPIC }}
+        - name: DATASPINE_INPUT_STREAM_TOPIC
+          value: {{ DATASPINE_INPUT_STREAM_TOPIC }} 
+        - name: DATASPINE_OUTPUT_STREAM_TOPIC
+          value: {{ DATASPINE_OUTPUT_STREAM_TOPIC }}
+        - name: NUM_PARTITIONS
+          value: "1"
+        - name: NUM_REPLICAS
+          value: "1"
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 9092
+        - containerPort: 8082
+        - containerPort: 8081
+#        - containerPort: 2181

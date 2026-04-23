@@ -1,0 +1,69 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+spec:
+  replicas: 1
+  template: 
+    metadata:
+      labels:
+        app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+        # Note:  'tag' is used by PipelineAI, 'version' is used by Istio. 
+        #        for now, keep these together - and keep them the same value
+        name: {{ DATASPINE_MODEL_NAME }}
+        tag: "{{ DATASPINE_MODEL_TAG }}"
+        version: "{{ DATASPINE_MODEL_TAG }}"
+#        type: {{ DATASPINE_MODEL_TYPE }}
+#        runtime: {{ DATASPINE_MODEL_RUNTIME }}
+#        chip: {{ DATASPINE_MODEL_CHIP }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "9040"
+    spec:
+      containers:
+      - name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+        image: {{ DATASPINE_IMAGE_REGISTRY_URL }}/{{ DATASPINE_IMAGE_REGISTRY_REPO }}/{{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}:{{ DATASPINE_MODEL_TAG }} 
+        imagePullPolicy: "Always"
+        resources:
+          limits:
+            alpha.kubernetes.io/nvidia-gpu: 1
+        volumeMounts:
+        - mountPath: /usr/local/cuda
+          name: cuda
+          readOnly: true
+        - mountPath: /rootfs/usr/lib
+          name: rootfs-usr-lib
+          readOnly: true
+        env:
+#        - name: DATASPINE_MODEL_NAME
+#          value: {{ DATASPINE_MODEL_NAME }}
+#        - name: DATASPINE_MODEL_TAG
+#          value: "{{ DATASPINE_MODEL_TAG }}"
+#        - name: DATASPINE_MODEL_TYPE
+#          value: {{ DATASPINE_MODEL_TYPE }}
+#        - name: DATASPINE_MODEL_RUNTIME
+#          value: {{ DATASPINE_MODEL_RUNTIME }}
+#        - name: DATASPINE_MODEL_CHIP
+#          value: {{ DATASPINE_MODEL_CHIP }}
+        - name: DATASPINE_LOG_STREAM_URL
+          value: {{ DATASPINE_LOG_STREAM_URL }}
+        - name: DATASPINE_LOG_STREAM_TOPIC
+          value: {{ DATASPINE_LOG_STREAM_TOPIC }}
+        - name: DATASPINE_INPUT_STREAM_URL
+          value: {{ DATASPINE_INPUT_STREAM_URL }}
+        - name: DATASPINE_INPUT_STREAM_TOPIC
+          value: {{ DATASPINE_INPUT_STREAM_TOPIC }}
+        - name: DATASPINE_OUTPUT_STREAM_URL
+          value: {{ DATASPINE_OUTPUT_STREAM_URL }}
+        - name: DATASPINE_OUTPUT_STREAM_TOPIC
+          value: {{ DATASPINE_OUTPUT_STREAM_TOPIC }}
+        ports:
+        - containerPort: 8080
+      volumes:
+      - hostPath:
+          path: /usr/local/cuda
+        name: cuda
+      - hostPath:
+          path: /usr/lib
+        name: rootfs-usr-lib

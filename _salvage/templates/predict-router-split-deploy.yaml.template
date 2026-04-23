@@ -1,0 +1,57 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+  namespace: {{ DATASPINE_NAMESPACE }}
+  labels:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+    faas_function: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+spec:
+  replicas: 1
+  template: 
+    metadata:
+      labels:
+        app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+        # Note:  'tag' is used by PipelineAI, 'version' is used by Istio. 
+        #        for now, keep these together - and keep them the same value
+        name: "{{ DATASPINE_MODEL_NAME }}"
+        tag: "{{ DATASPINE_MODEL_TAG }}"
+        version: "{{ DATASPINE_MODEL_TAG }}"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "9040"
+    spec:
+      containers:
+      - name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+        image: {{ DATASPINE_IMAGE_REGISTRY_URL }}/{{ DATASPINE_IMAGE_REGISTRY_REPO }}/{{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}:{{ DATASPINE_MODEL_TAG }} 
+        imagePullPolicy: "Always"
+        env:
+        - name: DATASPINE_STREAM_LOGGER_URL
+          value: {{ DATASPINE_STREAM_LOGGER_URL }}
+        - name: DATASPINE_STREAM_LOGGER_TOPIC
+          value: {{ DATASPINE_STREAM_LOGGER_TOPIC }}
+        - name: DATASPINE_STREAM_INPUT_URL
+          value: {{ DATASPINE_STREAM_INPUT_URL }}
+        - name: DATASPINE_STREAM_INPUT_TOPIC
+          value: {{ DATASPINE_STREAM_INPUT_TOPIC }}
+        - name: DATASPINE_STREAM_OUTPUT_URL
+          value: {{ DATASPINE_STREAM_OUTPUT_URL }}
+        - name: DATASPINE_STREAM_OUTPUT_TOPIC
+          value: {{ DATASPINE_STREAM_OUTPUT_TOPIC }}
+        ports:
+        - containerPort: 8080
+#        livenessProbe:
+#          httpGet:
+#            path: /ping
+#            port: 8080
+#          initialDelaySeconds: 60
+#          periodSeconds: 15
+#          failureThreshold: 4
+#        readinessProbe:
+#          httpGet:
+#            path: /ping
+#            port: 8080
+#          initialDelaySeconds: 60
+#          periodSeconds: 15
+#          failureThreshold: 4

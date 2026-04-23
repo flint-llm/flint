@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{DATASPINE_IMAGE_REGISTRY_NAMESPACE}}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+  labels:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME}}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+    hystrix.enabled: "true"
+spec:
+  type: LoadBalancer
+  ports:
+  - name: nginx
+    port: 80 
+    targetPort: 6969
+  - name: prometheus-datasource
+    port: 9090
+    targetPort: 9090
+  - name: grafana
+    port: 3000
+    targetPort: 3000
+  selector:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+    hystrix.enabled: "true"

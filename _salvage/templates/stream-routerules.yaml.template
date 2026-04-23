@@ -1,0 +1,18 @@
+apiVersion: config.istio.io/v1alpha2 
+kind: RouteRule 
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+spec:
+  destination: 
+     name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+  match:
+    request:
+      headers:
+        uri:
+          prefix: /stream/{{ DATASPINE_MODEL_NAME }}/{{ DATASPINE_MODEL_TAG }}/
+  rewrite:
+    uri: /
+  precedence: 2
+  route:
+  - weight: 100
+---

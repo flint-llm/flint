@@ -1,0 +1,68 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+  labels:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+    hystrix.enabled: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels: 
+      app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+  template:
+    metadata:
+      labels:
+        app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+        hystrix.enabled: "true"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "9040"
+    spec:
+      containers:
+      - name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+        image: {{ DATASPINE_IMAGE_REGISTRY_URL }}/{{ DATASPINE_IMAGE_REGISTRY_REPO }}/{{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}:{{ DATASPINE_MODEL_TAG }}
+#      readinessProbe:
+#        httpGet:
+#          path: /healthz
+#          port: 9876
+#          scheme: HTTP
+#      livenessProbe:
+#        httpGet:
+#          path: /healthz
+#          port: 9876
+#          scheme: HTTP
+#        initialDelaySeconds: 180
+#        timeoutSeconds: 5
+#        resources:
+#          limits:
+#            cpu: {{ DATASPINE_CORE_LIMIT }}
+#            memory: {{ DATASPINE_MEMORY_LIMIT }}
+        imagePullPolicy: "Always"
+        env:
+        - name: DATASPINE_MODEL_RUNTIME
+          value: {{ DATASPINE_MODEL_RUNTIME }}
+        - name: DATASPINE_MODEL_TYPE
+          value: {{ DATASPINE_MODEL_TYPE }} 
+        - name: DATASPINE_MODEL_NAME
+          value: {{ DATASPINE_MODEL_NAME }}
+        - name: DATASPINE_MODEL_TAG
+          value: "{{ DATASPINE_MODEL_TAG }}"
+        - name: DATASPINE_INPUT_STREAM_URL
+          value: "{{ DATASPINE_INPUT_STREAM_URL }}"
+        - name: DATASPINE_INPUT_STREAM_TOPIC
+          value: "{{ DATASPINE_INPUT_STREAM_TOPIC }}"
+        - name: DATASPINE_OUTPUT_STREAM_URL
+          value: "{{ DATASPINE_OUTPUT_STREAM_URL }}"
+        - name: DATASPINE_OUTPUT_STREAM_TOPIC
+          value: "{{ DATASPINE_OUTPUT_STREAM_TOPIC }}"
+        ports:
+        - containerPort: 6969
+        - containerPort: 9090
+        - containerPort: 3000
+      tolerations:
+        - key: "node.alpha.kubernetes.io/notReady"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 6000

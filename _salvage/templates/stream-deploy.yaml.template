@@ -1,0 +1,40 @@
+apiVersion: extensions/v1beta1
+kind: Deployment 
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }} 
+  namespace: {{ DATASPINE_NAMESPACE }}
+  labels:
+    app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+    faas_function: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+    spec:
+      containers:
+      - name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+        image: {{ DATASPINE_IMAGE_REGISTRY_URL }}/{{ DATASPINE_IMAGE_REGISTRY_REPO }}/{{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_IMAGE_REGISTRY_BASE_CHIP}}:{{ DATASPINE_IMAGE_REGISTRY_BASE_TAG }}
+        imagePullPolicy: "Always"
+        env:
+        - name: DATASPINE_STREAM_LOGGER_TOPIC
+          value: {{ DATASPINE_STREAM_LOGGER_TOPIC }}
+        - name: DATASPINE_STREAM_INPUT_TOPIC
+          value: {{ DATASPINE_STREAM_INPUT_TOPIC }} 
+        - name: DATASPINE_STREAM_OUTPUT_TOPIC
+          value: {{ DATASPINE_STREAM_OUTPUT_TOPIC }}
+        - name: DATASPINE_STREAM_ENABLE_MQTT
+          value: "{{ DATASPINE_STREAM_ENABLE_MQTT }}"
+        - name: DATASPINE_STREAM_ENABLE_KAFKA_REST_API
+          value: "{{ DATASPINE_STREAM_ENABLE_KAFKA_REST_API }}"
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 9092
+        - containerPort: 8082
+        - containerPort: 8081
+        - containerPort: 1883
+#        - containerPort: 2181

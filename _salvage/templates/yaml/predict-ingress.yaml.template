@@ -1,0 +1,17 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }} 
+  annotations:
+    kubernetes.io/ingress.class: "istio"
+  labels:
+    istio: ingress
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /predict/{{ DATASPINE_MODEL_NAME }}/.*
+        backend:
+          serviceName: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+          servicePort: 8080 
+# TODO:  Add port 3000 and 9090 for metrics!

@@ -1,0 +1,124 @@
+{%- set task_port = 2223 -%}
+{%- set admin_port = 6007 -%}
+
+{%- set replicas = {"chief": 1, "master": 1, "worker": DATASPINE_WORKER_REPLICAS, "ps": DATASPINE_PS_REPLICAS, "evaluator": 1} -%}
+
+{%- macro evaluator_hosts() -%}
+  {%- for task_index in range(1) -%}
+    {%- if not loop.first -%},{%- endif -%}
+    {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE}}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}-evaluator-{{ task_index }}:{{ task_port }}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- macro chief_hosts() -%}
+  {%- for task_index in range(1) -%}
+    {%- if not loop.first -%},{%- endif -%}
+    {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE}}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}-chief-{{ task_index }}:{{ task_port }}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- macro master_hosts() -%}
+  {%- for task_index in range(1) -%}
+    {%- if not loop.first -%},{%- endif -%}
+    {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE}}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}-master-{{ task_index }}:{{ task_port }}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- macro worker_hosts() -%}
+  {%- for task_index in range(DATASPINE_WORKER_REPLICAS) -%}
+    {%- if not loop.first -%},{%- endif -%}
+    {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}-worker-{{ task_index }}:{{ task_port }}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- macro ps_hosts() -%}
+  {%- for task_index in range(DATASPINE_PS_REPLICAS) -%}
+    {%- if not loop.first -%},{%- endif -%}
+    {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}-ps-{{ task_index }}:{{ task_port }}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- for task_type in ["master", "worker", "ps"] -%}
+{%- for task_index in range(replicas[task_type]) -%}
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}-{{ task_type }}-{{ task_index }}
+spec:
+  selector:
+    name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+    task_type: {{ task_type }}
+    task_index: "{{ task_index }}"
+  ports:
+  - name: grpc
+    port: {{ task_port }}
+  - name: http
+    port: {{ admin_port }}
+---
+kind: ReplicaSet
+apiVersion: extensions/v1beta1
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}-{{ task_type }}-{{ task_index }}
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+        task_type: {{ task_type }}
+        task_index: "{{ task_index }}"
+    spec:
+      containers:
+      - name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}        
+        image: {{ DATASPINE_IMAGE_REGISTRY_URL }}/{{ DATASPINE_IMAGE_REGISTRY_REPO }}/{{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}:{{ DATASPINE_MODEL_TAG }} 
+        resources:
+#          limits:
+#            cpu: {{ DATASPINE_WORKER_CORE_LIMIT }}
+#            memory: {{ DATASPINE_WORKER_MEMORY_LIMIT }}
+          requests:
+            memory: 100Mi
+            cpu: 100m
+        imagePullPolicy: "Always"
+        env:
+        - name: TF_CONFIG
+          value: "{\"environment\": \"cloud\", \"cluster\": {\"master\": [\""{{ master_hosts() }}"\"], \"worker\": [\""{{ worker_hosts() }}"\"], \"ps\": [\""{{ ps_hosts() }}"\"]}, \"task\": {\"type\": \""{{ task_type }}"\", \"index\": "{{ task_index }}"} }"
+        - name: DATASPINE_MODEL_TASK_TYPE
+          value: "{{ task_type }}"
+        - name: DATASPINE_MODEL_TASK_INDEX
+          value: "{{ task_index }}"
+        - name: DATASPINE_MODEL_MASTER_HOSTS
+          value: "{{ master_hosts() }}"        
+        - name: DATASPINE_MODEL_WORKER_HOSTS
+          value: "{{ worker_hosts() }}"
+        - name: DATASPINE_MODEL_PS_HOSTS
+          value: "{{ ps_hosts() }}"
+        - name: DATASPINE_INPUT_PATH
+          value: "{{ DATASPINE_INPUT_PATH }}"
+        - name: DATASPINE_OUTPUT_PATH
+          value: "{{ DATASPINE_OUTPUT_PATH }}"
+        - name: DATASPINE_INPUT_STREAM_URL
+          value: "{{ DATASPINE_INPUT_STREAM_URL }}"
+        - name: DATASPINE_INPUT_STREAM_TOPIC
+          value: "{{ DATASPINE_INPUT_STREAM_TOPIC }}"
+        - name: DATASPINE_OUTPUT_STREAM_URL
+          value: "{{ DATASPINE_OUTPUT_STREAM_URL }}"
+        - name: DATASPINE_OUTPUT_STREAM_TOPIC
+          value: "{{ DATASPINE_OUTPUT_STREAM_TOPIC }}"
+        ports:
+        - containerPort: {{ task_port }}
+        - containerPort: {{ admin_port }}
+        volumeMounts:
+        - name: input 
+          mountPath: {{ DATASPINE_INPUT_PATH }} 
+        - name: output
+          mountPath: {{ DATASPINE_OUTPUT_PATH }}
+      volumes:
+        - name: input
+          hostPath:
+            path: {{ DATASPINE_INPUT_HOST_PATH }}
+        - name: output 
+          hostPath:
+            path: {{ DATASPINE_OUTPUT_HOST_PATH }}
+---
+{% endfor %}
+{%- endfor -%}

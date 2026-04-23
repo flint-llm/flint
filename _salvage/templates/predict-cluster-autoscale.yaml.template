@@ -1,0 +1,13 @@
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }} 
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: extensions/v1beta1
+    kind: Deployment
+    name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }} 
+  minReplicas: {{ DATASPINE_MIN_REPLICAS }} 
+  maxReplicas: {{ DATASPINE_MAX_REPLICAS }} 
+  targetCPUUtilizationPercentage: {{ DATASPINE_TARGET_CORE_UTIL_PERCENTAGE }}

@@ -1,0 +1,79 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: ds-user-nb-cpu-{{ NOTEBOOK_NAME }}
+  namespace: default
+  labels:
+    app: ds-user-nb-cpu-{{ NOTEBOOK_NAME }}
+    resource_type: "notebook"
+spec:
+  replicas: 1
+  template: 
+    metadata:
+      labels:
+        app: ds-user-nb-cpu-{{ NOTEBOOK_NAME }}
+        resource_type: "notebook"
+    spec:
+      containers:
+      - name: ds-user-nb-cpu-{{ NOTEBOOK_NAME }}
+        image: {{ NOTEBOOK_ENVIRONMENT }}
+        resources:
+          limits:
+            cpu: {{ CPU_ALLOCATION }}
+            memory: {{ MEMORY_ALLOCATION }}
+        imagePullPolicy: "IfNotPresent"
+#        restartPolicy: "Always"
+#        terminationMessagePolicy: "FallbackToLogsOnError"
+        env:
+        - name: GET_HOSTS_FROM
+          value: env
+        - name: SPARK_MASTER
+          value: spark://spark-master-2-3-0:7077
+        - name: SPARK_SUBMIT_ARGS
+          value: ""
+        - name: JUPYTERHUB_AUTHENTICATOR
+          value: dummyauthenticator.DummyAuthenticator
+        - name: AUTH0_SUBDOMAIN
+          value: ""
+        - name: OAUTH_CALLBACK_URL
+          value: ""
+        - name: OAUTH_CLIENT_ID
+          value: ""
+        - name: OAUTH_CLIENT_SECRET
+          value: ""
+        - name: GITHUB_OAUTH_CLIENT_ID
+          value: ""
+        - name: GITHUB_OAUTH_CLIENT_SECRET
+          value: ""
+        volumeMounts:
+        # - name: notebooks-volume
+        #   mountPath: /root/notebooks          
+        # - name: models-volume
+        #   mountPath: /root/models    
+        - name: dockersocket
+          mountPath: /var/run/docker.sock
+        - name: kube-volume
+          mountPath: /root/.kube
+        ports:
+        - containerPort: 6006
+        - containerPort: 8754
+        - containerPort: 8755
+        - containerPort: 5000
+        - containerPort: 54321
+        - containerPort: 9090
+        - containerPort: 8088
+      volumes:
+      # - name: notebooks-volume
+      #   gitRepo:
+      #     repository: "https://github.com/dataspine/sample-notebooks.git"
+      #     revision: "master"
+       # - name: models-volume
+       #   gitRepo:
+       #     repository: "https://github.com/dataspine/models-dataspine.git"
+       #     revision: "master" 
+       - name: dockersocket
+         hostPath:
+           path: /var/run/docker.sock
+       - name: kube-volume
+         hostPath:
+           path: /root/.kube

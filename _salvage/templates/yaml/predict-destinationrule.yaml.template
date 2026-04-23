@@ -1,0 +1,13 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata: 
+   name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-invocations-b
+spec: 
+   host: {{DATASPINE_IMAGE_REGISTRY_NAMESPACE}}-{{DATASPINE_MODEL_NAME}}.default.svc.cluster.local
+   subsets:
+   {% for var in range(DATASPINE_MODEL_NUM_SPLIT_TAGS_AND_WEIGHTS) %}
+   - name: "{{DATASPINE_IMAGE_REGISTRY_NAMESPACE}}-{{DATASPINE_MODEL_NAME}}-{{ DATASPINE_MODEL_SPLIT_TAG_LIST[var]}}"
+     labels:
+       version: "{{ DATASPINE_MODEL_SPLIT_TAG_LIST[var] }}"
+   {% endfor %}   
+

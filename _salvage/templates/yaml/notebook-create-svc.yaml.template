@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ds-user-nb-cpu-{{ NOTEBOOK_NAME }}
+  labels:
+    app: ds-user-nb-cpu-{{ NOTEBOOK_NAME }}
+spec:
+  type: LoadBalancer
+  ports:
+  - name: jupyterhub
+    port: 80
+    targetPort: 8754
+    nodePort: 30006
+  - name: jupyterhub-api-proxy
+    port: 81
+    targetPort: 8755
+    nodePort: 30007
+  - name: tensorboard
+    port: 6006
+    targetPort: 6006
+    nodePort: 30008
+  - name: studio
+    port: 5000
+    targetPort: 5000
+    nodePort: 30009
+  - name: h2o
+    port: 54321
+    targetPort: 54321
+    nodePort: 30010
+  selector:
+    app: ds-user-nb-cpu-{{ NOTEBOOK_NAME }}

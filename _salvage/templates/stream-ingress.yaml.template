@@ -1,0 +1,16 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }} 
+  annotations:
+    kubernetes.io/ingress.class: "istio"
+  labels:
+    istio: ingress
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /stream/{{ DATASPINE_MODEL_NAME }}/{{ DATASPINE_MODEL_TAG }}/.*
+        backend:
+          serviceName: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+          servicePort: 8082

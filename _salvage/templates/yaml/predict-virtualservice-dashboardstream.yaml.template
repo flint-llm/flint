@@ -1,0 +1,21 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService 
+metadata:
+   name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-dashboardstream
+spec:
+   hosts: 
+      - "*" 
+   gateways: 
+      - test-gateway 
+   http:
+   - match:
+     - uri:
+          prefix: /predict/{{ DATASPINE_MODEL_NAME }}/dashboard.stream
+     rewrite:
+        uri: /dashboard.stream
+     route:
+     - destination: 
+          host: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}.default.svc.cluster.local
+          port:
+            number: 8080 
+       weight: 100

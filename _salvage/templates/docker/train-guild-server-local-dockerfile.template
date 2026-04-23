@@ -1,0 +1,71 @@
+FROM {{ DATASPINE_IMAGE_REGISTRY_URL }}/{{ DATASPINE_IMAGE_REGISTRY_REPO }}/{{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}:{{ DATASPINE_IMAGE_REGISTRY_BASE_TAG }}
+
+ENV \
+  DATASPINE_MODEL_RUNTIME={{ DATASPINE_MODEL_RUNTIME }}
+
+ENV \
+  DATASPINE_MODEL_TYPE={{ DATASPINE_MODEL_TYPE }}
+
+ENV \
+  DATASPINE_MODEL_NAME={{ DATASPINE_MODEL_NAME }}
+
+ENV \
+  DATASPINE_MODEL_TAG={{ DATASPINE_MODEL_TAG }}
+
+ENV \
+  DATASPINE_MODEL_PATH=/root/model/{{ DATASPINE_MODEL_RUNTIME }}/{{ DATASPINE_MODEL_TYPE }}/{{ DATASPINE_MODEL_NAME }}/{{ DATASPINE_MODEL_TAG }}
+
+COPY {{ DATASPINE_MODEL_PATH }} $DATASPINE_MODEL_PATH
+
+RUN \
+   echo "DATASPINE_MODEL_PATH=$DATASPINE_MODEL_PATH"
+
+ENV \
+  DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME=dataspine-{{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}
+
+RUN \
+   sudo chmod a+rwx -R $DATASPINE_MODEL_PATH
+
+RUN \
+  if [ -f "$DATASPINE_MODEL_PATH/dataspine_conda_environment.yml" ]; then \
+    echo "" \
+    && echo "Creating Conda Environment '$DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME' with '$DATASPINE_MODEL_PATH/dataspine_conda_environment.yml'..." \
+    && echo "" \
+    && conda env update --name $DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME --file $DATASPINE_MODEL_PATH/dataspine_conda_environment.yml \ 
+    && echo "" \
+    && echo "...Conda Environment Updated!" \
+    && echo ""; \
+  fi
+
+RUN \
+  echo "source activate $DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME" >> ~/.bashrc
+
+RUN \
+  source activate $DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME && conda list
+
+RUN \
+   if [ -f "$DATASPINE_MODEL_PATH/dataspine_setup.sh" ]; then \
+     sudo chmod a+x $DATASPINE_MODEL_PATH/dataspine_setup.sh \
+     && echo "Running '$DATASPINE_MODEL_PATH/dataspine_setup.sh'..." \
+     && echo "" \
+     && $DATASPINE_MODEL_PATH/dataspine_setup.sh \
+     && echo "" \
+     && echo "...Successfully Trained!" \
+     && echo ""; \
+   fi
+
+RUN \
+    if [ -f "$DATASPINE_MODEL_PATH/Guild" ]; then \
+         echo "" \
+         && echo "Starting Guild-based TensorFlow Training with learning_rate=[0.05, 0.025]..." \
+         && echo "" \
+         && cd $DATASPINE_MODEL_PATH \
+         && guild prepare \
+         && guild train --flag=learning_rate=0.05 \
+         && guild evaluate --latest-run \
+         && guild train --flag=learning_rate=0.025 \
+         && guild evaluate --latest-run \
+         && echo "" \
+         && echo "...Training Complete!" \
+         && echo ""; \
+   fi

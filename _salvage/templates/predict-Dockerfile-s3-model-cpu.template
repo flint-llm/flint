@@ -1,0 +1,39 @@
+FROM dataspine/predict:cpu-{{ DATASPINE_IMAGE_TAG }}
+
+ARG model_type
+RUN \
+  echo $model_type
+ENV \
+  DATASPINE_MODEL_TYPE=$model_type
+
+ARG model_name
+RUN \
+  echo $model_name
+ENV \
+  DATASPINE_MODEL_NAME=$model_name
+
+ARG model_tag
+RUN \
+  echo $model_tag
+ENV \
+  DATASPINE_MODEL_TAG=$model_tag
+
+ARG model_path
+RUN \
+  echo $model_path
+ENV \
+  DATASPINE_MODEL_PATH=/root/model/$model_type/$model_name/$model_tag
+
+COPY $model_path $DATASPINE_MODEL_PATH
+
+ENV \
+  DATASPINE_MODEL_PREDICT_CONDA_ENV_NAME=dataspine-predict-$model_type-$model_name-$model_tag
+
+RUN \
+  echo $DATASPINE_MODEL_PREDICT_CONDA_ENV_NAME
+
+RUN \
+  /root/scripts/setup-model-environment.sh
+
+RUN \
+  /root/scripts/train-model-if-requested.sh

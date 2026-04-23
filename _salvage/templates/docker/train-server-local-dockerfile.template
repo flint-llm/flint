@@ -1,0 +1,108 @@
+FROM {{ DATASPINE_IMAGE_REGISTRY_URL }}/{{ DATASPINE_IMAGE_REGISTRY_REPO }}/{{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_CHIP }}:{{ DATASPINE_IMAGE_REGISTRY_BASE_TAG }}
+
+LABEL DATASPINE_IMAGE_REGISTRY_URL={{ DATASPINE_IMAGE_REGISTRY_URL }}
+LABEL DATASPINE_IMAGE_REGISTRY_REPO={{ DATASPINE_IMAGE_REGISTRY_REPO }}
+LABEL DATASPINE_IMAGE_REGISTRY_NAMESPACE={{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}
+LABEL DATASPINE_IMAGE_REGISTRY_BASE_TAG={{ DATASPINE_IMAGE_REGISTRY_BASE_TAG }}
+LABEL DATASPINE_MODEL_NAME={{ DATASPINE_MODEL_NAME }}
+LABEL DATASPINE_MODEL_TYPE={{ DATASPINE_MODEL_TYPE }}
+LABEL DATASPINE_MODEL_RUNTIME={{ DATASPINE_MODEL_RUNTIME }}
+LABEL DATASPINE_MODEL_CHIP={{ DATASPINE_MODEL_CHIP }}
+
+ENV \
+  DATASPINE_MODEL_NAME={{ DATASPINE_MODEL_NAME }}
+
+ENV \
+  DATASPINE_MODEL_TYPE={{ DATASPINE_MODEL_TYPE }}
+
+ENV \
+  DATASPINE_MODEL_RUNTIME={{ DATASPINE_MODEL_RUNTIME }}
+
+ENV \
+  DATASPINE_MODEL_CHIP={{ DATASPINE_MODEL_CHIP }}
+
+# We need to make this /root/ml/model to avoid clobbering with mounts
+ENV \
+  DATASPINE_MODEL_PATH=/root/ml/model
+#  DATASPINE_MODEL_PATH=/opt/ml/model
+
+ENV \
+  DATASPINE_INPUT_PATH=/opt/ml/input
+
+ENV \
+  DATASPINE_OUTPUT_PATH=/opt/ml/output
+
+ENV \
+  TENSORBOARD_LOGDIR_PATH=$DATASPINE_OUTPUT_PATH
+
+RUN \
+  mkdir -p $TENSORBOARD_LOGDIR_PATH
+
+RUN \
+   echo "DATASPINE_MODEL_PATH=$DATASPINE_MODEL_PATH"
+
+ENV \
+  DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME=dataspine-{{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}
+#-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_RUNTIME }}-{{ DATASPINE_MODEL_CHIP }}
+
+RUN \
+  echo $DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME \
+  && echo ""
+
+RUN \
+  conda create --name $DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME \
+  && echo "source activate $DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME" >> ~/.bashrc 
+
+COPY {{ DATASPINE_MODEL_PATH }}/dataspine_setup.sh $DATASPINE_MODEL_PATH/dataspine_setup.sh
+
+RUN \
+  chmod a+x $DATASPINE_MODEL_PATH/dataspine_setup.sh \
+  && mkdir -p /opt/conda/envs/$DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME/etc/conda/activate.d/ \
+  && cd /opt/conda/envs/$DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME/etc/conda/activate.d/ \
+  && ln -s $DATASPINE_MODEL_PATH/dataspine_setup.sh \
+  && echo "" \
+  && ls /opt/conda/envs/$DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME/etc/conda/activate.d/ \
+  && echo "" \
+  && cat /opt/conda/envs/$DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME/etc/conda/activate.d/dataspine_setup.sh \
+  && echo "" \
+  && echo "Installing 'dataspine_setup.sh' into conda environment '$DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME'..." \
+  && echo "" \
+  && echo "...Conda Environment Updated!" \
+  && echo "";
+
+{% if DATASPINE_MODEL_RUNTIME not in ['jvm'] %}
+# This is intentionally split out to prevent dependencies from being re-initialized on every build
+#  (Even if the dependencies haven't changed.)
+COPY {{ DATASPINE_MODEL_PATH }}/dataspine_conda_environment.yml $DATASPINE_MODEL_PATH/dataspine_conda_environment.yml
+COPY {{ DATASPINE_MODEL_PATH }}/dataspine_condarc .condarc
+
+RUN \
+  if [ -f "$DATASPINE_MODEL_PATH/dataspine_conda_environment.yml" ]; then \
+    ls $DATASPINE_MODEL_PATH/dataspine_conda_environment.yml \
+    && echo "" \
+    && echo "Updating Conda Environment '$DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME' with '$DATASPINE_MODEL_PATH/dataspine_conda_environment.yml'..." \
+    && echo "" \
+    && conda env update --name $DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME --file $DATASPINE_MODEL_PATH/dataspine_conda_environment.yml \
+    && echo "" \
+    && echo "...Conda Environment Updated!" \
+    && echo ""; \
+  fi
+{% endif %}
+
+# TODO: Remove this once this is fixed:
+#       https://github.com/tensorflow/tensorboard/issues/877
+RUN \
+  source activate $DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME \
+  && pip install tensorflow-tensorboard==0.4.0rc3
+
+COPY {{ DATASPINE_MODEL_PATH }} $DATASPINE_MODEL_PATH
+
+# Moved these to the bottom to avoid re-doing everything above when DATASPINE_MODEL_TAG changes
+LABEL DATASPINE_MODEL_TAG={{ DATASPINE_MODEL_TAG }}
+ENV \
+  DATASPINE_MODEL_TAG={{ DATASPINE_MODEL_TAG }}
+
+RUN \
+  source activate $DATASPINE_MODEL_TRAIN_CONDA_ENV_NAME \
+  && conda list \
+  && export

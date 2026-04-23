@@ -1,0 +1,125 @@
+apiVersion: config.istio.io/v1alpha2 
+kind: RouteRule 
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-invocations
+spec:
+   destination: 
+      name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+   match:
+     request:
+       headers:
+         uri:
+           prefix: /predict/{{ DATASPINE_MODEL_NAME }}/invocations 
+   rewrite:
+     uri: /invocations
+   precedence: 2
+   # Note:  'tag' is used by PipelineAI, 'version' is used by Istio.
+   #        for now, keep these together - and keep them the same value
+   route:
+   {% for idx in range(DATASPINE_MODEL_NUM_SPLIT_TAGS_AND_WEIGHTS) %}
+   - labels:
+       tag: "{{ DATASPINE_MODEL_SPLIT_TAG_LIST[idx] }}"
+       version: "{{ DATASPINE_MODEL_SPLIT_TAG_LIST[idx] }}"
+     weight: {{ DATASPINE_MODEL_SPLIT_WEIGHT_LIST[idx] }}
+   {% endfor %}
+   mirror:
+   {% for idx in range(DATASPINE_MODEL_NUM_SHADOW_TAGS) %}
+     name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+     labels:
+       tag: "{{ DATASPINE_MODEL_SHADOW_TAG_LIST[idx] }}"
+       version: "{{ DATASPINE_MODEL_SHADOW_TAG_LIST[idx] }}"
+   {% endfor %}
+---
+apiVersion: config.istio.io/v1alpha2
+kind: RouteRule
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-ping
+spec:
+  destination:
+    name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+  match:
+    request:
+      headers:
+        uri:
+          prefix: /predict/{{ DATASPINE_MODEL_NAME }}/ping
+  rewrite:
+    uri: /ping
+  precedence: 2 
+  route:
+  - weight: 100
+---
+apiVersion: config.istio.io/v1alpha2
+kind: RouteRule
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-dashboardstream
+spec:
+  destination:
+    name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+  match:
+    request:
+      headers:
+        uri:
+          prefix: /predict/{{ DATASPINE_MODEL_NAME }}/dashboard.stream
+  rewrite:
+    uri: /dashboard.stream
+  precedence: 2
+  route:
+  - weight: 100
+---
+apiVersion: config.istio.io/v1alpha2
+kind: RouteRule
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-prometheus 
+spec:
+  destination:
+    name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+  match:
+    request:
+      headers:
+        uri:
+          prefix: /predict/{{ DATASPINE_MODEL_NAME }}/prometheus/
+  rewrite:
+    uri: /prometheus/
+  precedence: 2
+  route:
+  - weight: 100
+---
+apiVersion: config.istio.io/v1alpha2
+kind: RouteRule
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-metrics 
+spec:
+  destination:
+    name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+  match:
+    request:
+      headers:
+        uri:
+          prefix: /predict/{{ DATASPINE_MODEL_NAME }}/metrics/
+  rewrite:
+    uri: /metrics/
+  precedence: 2
+  route:
+  - weight: 100
+---
+apiVersion: config.istio.io/v1alpha2
+kind: RouteRule
+metadata:
+  name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-denytherest
+spec:
+  destination:
+    name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}
+  match:
+    request:
+      headers:
+        uri:
+          prefix: /predict/{{ DATASPINE_MODEL_NAME }}
+  rewrite:
+    uri: /
+  precedence: 1
+  route:
+  - weight: 100
+  httpFault:
+    abort:
+      percent: 100
+      httpStatus: 403 # Forbidden for all URLs except those specified at a higher precedence (>1)

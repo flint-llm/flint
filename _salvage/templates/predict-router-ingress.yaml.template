@@ -1,0 +1,19 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ DATASPINE_MODEL_RUNTIME}}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }} 
+  annotations:
+    kubernetes.io/ingress.class: "istio"
+#spec:
+#  backend:
+#    serviceName: {{ DATASPINE_MODEL_RUNTIME}}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }} 
+#    servicePort: 6969 
+spec:
+  rules:
+  - http:
+      paths:
+#      - path: /api/v1/model/predict/.*
+      - path: /.*
+        backend:
+          serviceName: {{ DATASPINE_MODEL_RUNTIME}}-{{ DATASPINE_MODEL_TYPE }}-{{ DATASPINE_MODEL_NAME }}-{{ DATASPINE_MODEL_TAG }} 
+          servicePort: 6969 

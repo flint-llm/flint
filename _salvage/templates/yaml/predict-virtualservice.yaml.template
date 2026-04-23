@@ -1,0 +1,29 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService 
+metadata:
+   name: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}-invocations-b
+spec:
+   hosts: 
+      - "*" 
+   gateways: 
+      - test-gateway 
+   http:
+   - match:
+     - uri:
+          prefix: /predict/{{ DATASPINE_MODEL_NAME }}/invocations
+     rewrite:
+        uri: /invocations
+     route:
+     {% for idx in range(DATASPINE_MODEL_NUM_SPLIT_TAGS_AND_WEIGHTS) %}
+     - destination: 
+          host: {{DATASPINE_IMAGE_REGISTRY_NAMESPACE}}-{{DATASPINE_MODEL_NAME}}.default.svc.cluster.local
+          port:
+            number: 8080
+          subset: {{DATASPINE_IMAGE_REGISTRY_NAMESPACE}}-{{DATASPINE_MODEL_NAME}}-{{DATASPINE_MODEL_SPLIT_TAG_LIST[idx]}}
+       weight: {{DATASPINE_MODEL_SPLIT_WEIGHT_LIST[idx]}}  
+     {% endfor %}
+     mirror:
+     {% for idx in range(DATASPINE_MODEL_NUM_SHADOW_TAGS) %}
+        host: {{ DATASPINE_IMAGE_REGISTRY_NAMESPACE }}-{{ DATASPINE_MODEL_NAME }}.default.svc.cluster.local
+        subset: {{DATASPINE_MODEL_NUM_SHADOW_TAGS[var]}}      
+     {% endfor %}   
