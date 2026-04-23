@@ -12,7 +12,11 @@ from flint.core.cluster import (
     _get_ingress_ip,
     _get_ingress_nodeport,
     ensure_namespace,
+    get_all_endpoints,
+    get_model_endpoint,
+    get_service_endpoint,
     has_gateway_api,
+    list_nodes,
 )
 from flint.core.errors import ClusterError
 
@@ -129,3 +133,147 @@ def test_get_ingress_ip_failure_raises() -> None:
         mock_run.return_value = MagicMock(returncode=1, stdout="")
         with pytest.raises(ClusterError, match="IP"):
             _get_ingress_ip()
+
+
+# -- list_nodes ---------------------------------------------------------------
+
+
+def _make_node(hostname: str) -> object:
+    labels = {"kubernetes.io/hostname": hostname}
+    return SimpleNamespace(metadata=SimpleNamespace(labels=labels, name=hostname))
+
+
+def test_list_nodes_returns_hostnames() -> None:
+    nodes = [_make_node("node-1"), _make_node("node-2")]
+    response = MagicMock()
+    response.items = nodes
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.CoreV1Api") as mock_cls,
+    ):
+        mock_api = MagicMock()
+        mock_api.list_node.return_value = response
+        mock_cls.return_value = mock_api
+        result = list_nodes()
+    assert result == ["node-1", "node-2"]
+
+
+def test_list_nodes_empty_cluster() -> None:
+    response = MagicMock()
+    response.items = []
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.CoreV1Api") as mock_cls,
+    ):
+        mock_api = MagicMock()
+        mock_api.list_node.return_value = response
+        mock_cls.return_value = mock_api
+        result = list_nodes()
+    assert result == []
+
+
+# -- get_service_endpoint -----------------------------------------------------
+
+
+def _make_svc_status(ip: str) -> object:
+    lb_entry = SimpleNamespace(ip=ip, hostname=None)
+    lb = SimpleNamespace(ingress=[lb_entry])
+    return SimpleNamespace(load_balancer=lb)
+
+
+def test_get_service_endpoint_found() -> None:
+    svc = SimpleNamespace(status=_make_svc_status("10.0.0.1"))
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.CoreV1Api") as mock_cls,
+    ):
+        mock_api = MagicMock()
+        mock_api.read_namespaced_service.return_value = svc
+        mock_cls.return_value = mock_api
+        result = get_service_endpoint("my-svc", "flint")
+    assert result == "10.0.0.1"
+
+
+def test_get_service_endpoint_not_found_raises() -> None:
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.CoreV1Api") as mock_cls,
+    ):
+        mock_api = MagicMock()
+        mock_api.read_namespaced_service.side_effect = Exception("not found")
+        mock_cls.return_value = mock_api
+        with pytest.raises(ClusterError, match="not found"):
+            get_service_endpoint("missing", "flint")
+
+
+# -- get_all_endpoints --------------------------------------------------------
+
+
+def _make_ingress(path: str, ip: str) -> object:
+    lb_entry = SimpleNamespace(ip=ip, hostname=None)
+    lb = SimpleNamespace(ingress=[lb_entry])
+    status = SimpleNamespace(load_balancer=lb)
+    path_item = SimpleNamespace(path=path)
+    http = SimpleNamespace(paths=[path_item])
+    rule = SimpleNamespace(http=http)
+    spec = SimpleNamespace(rules=[rule])
+    return SimpleNamespace(status=status, spec=spec)
+
+
+def test_get_all_endpoints_returns_list() -> None:
+    ingress = _make_ingress("/predict/mistral/", "1.2.3.4")
+    response = MagicMock()
+    response.items = [ingress]
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.NetworkingV1Api") as mock_cls,
+    ):
+        mock_api = MagicMock()
+        mock_api.list_namespaced_ingress.return_value = response
+        mock_cls.return_value = mock_api
+        result = get_all_endpoints("flint")
+    assert len(result) == 1
+    assert "1.2.3.4" in result[0]
+
+
+def test_get_all_endpoints_empty() -> None:
+    response = MagicMock()
+    response.items = []
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.NetworkingV1Api") as mock_cls,
+    ):
+        mock_api = MagicMock()
+        mock_api.list_namespaced_ingress.return_value = response
+        mock_cls.return_value = mock_api
+        result = get_all_endpoints("flint")
+    assert result == []
+
+
+# -- get_model_endpoint -------------------------------------------------------
+
+
+def test_get_model_endpoint_found() -> None:
+    ingress = _make_ingress("/predict/mistral/", "1.2.3.4")
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.NetworkingV1Api") as mock_cls,
+    ):
+        mock_api = MagicMock()
+        mock_api.read_namespaced_ingress.return_value = ingress
+        mock_cls.return_value = mock_api
+        result = get_model_endpoint("mistral", "flint")
+    assert result is not None
+    assert "1.2.3.4" in result
+
+
+def test_get_model_endpoint_not_found_raises() -> None:
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.NetworkingV1Api") as mock_cls,
+    ):
+        mock_api = MagicMock()
+        mock_api.read_namespaced_ingress.side_effect = Exception("not found")
+        mock_cls.return_value = mock_api
+        with pytest.raises(ClusterError, match="not found"):
+            get_model_endpoint("missing", "flint")

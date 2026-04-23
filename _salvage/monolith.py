@@ -1,3 +1,6 @@
+# DECOMMISSIONED 2026-04-22 -- logic extracted to flint/core/.
+# Kept as reference until S3 is complete.
+
 # Copyright 2018 Dataspine Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
