@@ -41,6 +41,8 @@ Example:   curl -N http://localhost:{port}/v1/chat/completions \\
 Press Ctrl+C to stop.
 """
 
+_shutdown_requested: threading.Event = threading.Event()
+
 
 @click.command("serve")
 @click.argument("model")
@@ -88,7 +90,7 @@ def serve(ctx: click.Context, model: str, port: int) -> None:
         return
 
     # 5. Install signal handlers for clean shutdown
-    _install_signal_handlers(proc)
+    _install_signal_handlers()
 
     # 6. Print banner
     click.echo(_BANNER.format(port=port, model=model))
@@ -99,23 +101,29 @@ def serve(ctx: click.Context, model: str, port: int) -> None:
     _start_stream_thread(proc.stdout, "[ollama] ")
     _start_stream_thread(proc.stderr, "[ollama] ")
 
-    # Block until the subprocess exits or Ctrl+C is received
-    try:
-        proc.wait()
-    except KeyboardInterrupt:
-        click.echo("\nStopping...", err=True)
-        _shutdown(proc)
-        click.echo("Stopped.")
-        sys.exit(0)
-
-    # Subprocess exited on its own (unexpected)
-    click.echo(
-        f"ollama serve exited with code {proc.returncode}.", err=True
-    )
-    sys.exit(proc.returncode or 1)
+    exit_code = _main_loop(proc)
+    sys.exit(exit_code)
 
 
 # -- Helpers ------------------------------------------------------------------
+
+
+def _main_loop(proc: subprocess.Popen[str]) -> int:
+    """Poll until the subprocess exits or shutdown is requested."""
+    while True:
+        if _shutdown_requested.is_set():
+            click.echo("\nStopping...", err=True)
+            _shutdown(proc)
+            click.echo("Stopped.")
+            return 0
+        try:
+            exit_code = proc.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            continue
+        except KeyboardInterrupt:
+            _shutdown_requested.set()
+            continue
+        return exit_code if exit_code is not None else 1
 
 
 def _start_stream_thread(stream: IO[str], prefix: str) -> None:
@@ -141,10 +149,10 @@ def _shutdown(proc: subprocess.Popen[str]) -> None:
         proc.wait()
 
 
-def _install_signal_handlers(proc: subprocess.Popen[str]) -> None:
-    """Install SIGTERM handler to clean up the subprocess on termination.
+def _install_signal_handlers() -> None:
+    """Install SIGTERM handler to request clean shutdown.
 
-    SIGINT (Ctrl+C) is handled by the KeyboardInterrupt catch in serve().
+    SIGINT (Ctrl+C) is handled inside _main_loop via KeyboardInterrupt.
     SIGTERM (e.g. from systemd or the E2E test harness) is handled here.
     Signal handlers are only available on Unix.
     """
@@ -152,7 +160,6 @@ def _install_signal_handlers(proc: subprocess.Popen[str]) -> None:
         return
 
     def _handler(signum: int, frame: object) -> None:
-        _shutdown(proc)
-        sys.exit(0)
+        _shutdown_requested.set()
 
     signal.signal(signal.SIGTERM, _handler)

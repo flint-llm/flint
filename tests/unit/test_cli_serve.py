@@ -188,11 +188,20 @@ def test_start_stream_thread_echoes_lines() -> None:
 
 
 def test_install_signal_handlers_runs_without_error() -> None:
+    import signal as _signal
+
+    import flint.cli.serve as serve_mod
     from flint.cli.serve import _install_signal_handlers
 
-    mock_proc = MagicMock()
-    # Should not raise even on Windows where SIGTERM behaves differently
-    _install_signal_handlers(mock_proc)
+    serve_mod._shutdown_requested.clear()
+    try:
+        # Should not raise even on Windows where SIGTERM behaves differently
+        _install_signal_handlers()
+        if hasattr(_signal, "SIGTERM"):
+            _signal.raise_signal(_signal.SIGTERM)
+            assert serve_mod._shutdown_requested.is_set()
+    finally:
+        serve_mod._shutdown_requested.clear()
 
 
 def test_serve_pull_streaming_path() -> None:
