@@ -144,32 +144,46 @@ def test_serve_happy_path_custom_port() -> None:
 
 
 def test_shutdown_skips_if_already_exited() -> None:
+    from unittest.mock import patch
+
     from flint.cli.serve import _shutdown
 
     mock_proc = MagicMock()
     mock_proc.poll.return_value = 0  # already exited
-    _shutdown(mock_proc)
-    mock_proc.terminate.assert_not_called()
+    with patch("os.killpg") as mock_killpg, patch("os.getpgid", return_value=1234):
+        _shutdown(mock_proc)
+        mock_killpg.assert_not_called()
 
 
 def test_shutdown_terminates_running_proc() -> None:
+    import signal as _signal
+    from unittest.mock import patch
+
     from flint.cli.serve import _shutdown
 
     mock_proc = MagicMock()
     mock_proc.poll.return_value = None
     mock_proc.wait.return_value = 0
-    _shutdown(mock_proc)
-    mock_proc.terminate.assert_called_once()
+    with patch("os.killpg") as mock_killpg, patch("os.getpgid", return_value=1234):
+        _shutdown(mock_proc)
+    mock_killpg.assert_called_once_with(1234, _signal.SIGTERM)
 
 
 def test_shutdown_kills_after_timeout() -> None:
+    import signal as _signal
+    from unittest.mock import call, patch
+
     from flint.cli.serve import _shutdown
 
     mock_proc = MagicMock()
     mock_proc.poll.return_value = None
     mock_proc.wait.side_effect = [subprocess.TimeoutExpired("ollama", 5), None]
-    _shutdown(mock_proc)
-    mock_proc.kill.assert_called_once()
+    with patch("os.killpg") as mock_killpg, patch("os.getpgid", return_value=1234):
+        _shutdown(mock_proc)
+    assert mock_killpg.call_args_list == [
+        call(1234, _signal.SIGTERM),
+        call(1234, _signal.SIGKILL),
+    ]
 
 
 def test_start_stream_thread_echoes_lines() -> None:

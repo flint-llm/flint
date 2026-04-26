@@ -134,6 +134,7 @@ def serve(model: str, port: int = DEFAULT_PORT) -> subprocess.Popen[str]:
         stderr=subprocess.PIPE,
         text=True,
         env=env,
+        start_new_session=True,
     )
     return proc
 

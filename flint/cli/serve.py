@@ -15,6 +15,7 @@ Windows is out of scope for `flint serve` (macOS and Linux only).
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -138,14 +139,20 @@ def _start_stream_thread(stream: IO[str], prefix: str) -> None:
 
 
 def _shutdown(proc: subprocess.Popen[str]) -> None:
-    """Gracefully stop *proc*: SIGTERM, then SIGKILL after 5s."""
+    """Gracefully stop *proc* and its process group: SIGTERM, then SIGKILL after 5s."""
     if proc.poll() is not None:
         return  # already exited
-    proc.terminate()
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except ProcessLookupError:
+        return
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         proc.wait()
 
 
