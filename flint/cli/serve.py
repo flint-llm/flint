@@ -2,9 +2,10 @@
 
 Lifecycle:
   1. Verify ollama is on PATH (or print install hint and exit)
-  2. Check if the model is already pulled locally; pull if not
-  3. Start `ollama serve` as a subprocess
-  4. Wait up to 30s for the server to be healthy
+  2. Start `ollama serve` as a subprocess
+  3. Wait up to 30s for the server to be healthy
+  4. Check if the model is already pulled locally; pull if not
+     (this step talks to the daemon we just started)
   5. Print the endpoint banner
   6. Stream Ollama's stdout/stderr to the terminal
   7. On SIGTERM or Ctrl+C: SIGTERM the subprocess, SIGKILL after 5s timeout
@@ -64,31 +65,32 @@ def serve(ctx: click.Context, model: str, port: int) -> None:
         )
         sys.exit(1)
 
-    # 2. Pull model if not already local (best-effort — may fail if no
-    #    existing daemon is running; user can pre-pull with `ollama pull`)
-    if not ollama.is_model_local(model):
-        click.echo(f"Pulling {model}...")
-        try:
-            for line in ollama.pull(model):
-                click.echo(line)
-        except OllamaError as exc:
-            handle_flint_error(exc, ctx)
-            return  # unreachable but satisfies type checker
-
-    # 3. Start ollama serve
+    # 2. Start ollama serve
     try:
         proc = ollama.serve(model, port)
     except OllamaNotFoundError as exc:
         handle_flint_error(exc, ctx)
         return
 
-    # 4. Wait for healthy
+    # 3. Wait for healthy
     try:
         ollama.wait_healthy(port, timeout_s=30)
     except OllamaUnhealthyError as exc:
         _shutdown(proc)
         handle_flint_error(exc, ctx)
         return
+
+    # 4. Pull model if not already local (the daemon we just started
+    #    handles the pull, so this works even with no pre-existing daemon).
+    if not ollama.is_model_local(model, port=port):
+        click.echo(f"Pulling {model}...")
+        try:
+            for line in ollama.pull(model, port=port):
+                click.echo(line)
+        except OllamaError as exc:
+            _shutdown(proc)
+            handle_flint_error(exc, ctx)
+            return  # unreachable but satisfies type checker
 
     # 5. Install signal handlers for clean shutdown
     _install_signal_handlers()

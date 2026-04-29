@@ -39,11 +39,14 @@ def is_available() -> bool:
     return shutil.which("ollama") is not None
 
 
-def list_local_models() -> list[str]:
+def list_local_models(port: int | None = None) -> list[str]:
     """Return locally available model names (without tags for matching).
 
     Runs `ollama list` and parses the output. Returns an empty list if the
     command fails (e.g. no running server) rather than raising.
+
+    When *port* is provided, OLLAMA_HOST is set so the CLI talks to the
+    daemon on that port instead of the default 11434.
 
     Output format:
         NAME               ID              SIZE      MODIFIED
@@ -54,6 +57,7 @@ def list_local_models() -> list[str]:
         capture_output=True,
         text=True,
         timeout=10,
+        env=_env_with_host(port),
     )
     if result.returncode != 0:
         logger.debug(
@@ -69,23 +73,26 @@ def list_local_models() -> list[str]:
     return models
 
 
-def is_model_local(model: str) -> bool:
+def is_model_local(model: str, port: int | None = None) -> bool:
     """Return True if *model* is in the local model library.
 
     Normalises the model name to include a tag (defaults to :latest) before
-    comparing against the output of list_local_models().
+    comparing against the output of list_local_models(). *port* is forwarded
+    so the lookup hits the right daemon when one was started on a non-default
+    port.
     """
     normalised = _normalise_model(model)
-    local = list_local_models()
+    local = list_local_models(port=port)
     return normalised in local or model in local
 
 
-def pull(model: str) -> Iterator[str]:
+def pull(model: str, port: int | None = None) -> Iterator[str]:
     """Pull *model* from the Ollama registry and yield progress lines.
 
     Requires `ollama serve` to be running (Ollama CLI communicates with its
     daemon for pull operations). The caller iterates the returned generator
-    to stream progress output.
+    to stream progress output. When *port* is provided, OLLAMA_HOST is set
+    so the pull uses the daemon on that port.
 
     Raises OllamaError after iteration is exhausted if the pull failed.
     """
@@ -95,6 +102,7 @@ def pull(model: str) -> Iterator[str]:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        env=_env_with_host(port),
     )
     assert proc.stdout is not None
     try:
@@ -172,3 +180,11 @@ def _normalise_model(model: str) -> str:
     if ":" not in model:
         return f"{model}:latest"
     return model
+
+
+def _env_with_host(port: int | None) -> dict[str, str]:
+    """Return os.environ with OLLAMA_HOST overridden to *port* if given."""
+    env = dict(os.environ)
+    if port is not None:
+        env["OLLAMA_HOST"] = f"localhost:{port}"
+    return env
