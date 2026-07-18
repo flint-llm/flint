@@ -74,3 +74,24 @@ jobs:
       - name: Run E2E tests
         # s2-verify-e2e: 2026-04-23
         run: FLINT_E2E_OLLAMA=1 pytest tests/integration/test_serve_local.py -v
+
+  deploy-kind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flint
+        run: pip install -e ".[dev]"
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: flint-e2e
+
+      - name: Run kind E2E tests
+        run: FLINT_E2E_KIND=1 pytest tests/integration/test_deploy_kind.py -v
