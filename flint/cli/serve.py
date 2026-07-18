@@ -3,12 +3,13 @@
 Lifecycle:
   1. Verify ollama is on PATH (or print install hint and exit)
   2. Start `ollama serve` as a subprocess
-  3. Wait up to 30s for the server to be healthy
-  4. Check if the model is already pulled locally; pull if not
+  3. Install signal handlers so a SIGTERM during startup shuts down cleanly
+  4. Wait up to 30s for the server to be healthy
+  5. Check if the model is already pulled locally; pull if not
      (this step talks to the daemon we just started)
-  5. Print the endpoint banner
-  6. Stream Ollama's stdout/stderr to the terminal
-  7. On SIGTERM or Ctrl+C: SIGTERM the subprocess, SIGKILL after 5s timeout
+  6. Print the endpoint banner
+  7. Stream Ollama's stdout/stderr to the terminal
+  8. On SIGTERM or Ctrl+C: SIGTERM the subprocess group, SIGKILL after 5s timeout
 
 Windows is out of scope for `flint serve` (macOS and Linux only).
 `flint version` and `flint init` work on all platforms.
@@ -72,7 +73,13 @@ def serve(ctx: click.Context, model: str, port: int) -> None:
         handle_flint_error(exc, ctx)
         return
 
-    # 3. Wait for healthy
+    # 3. Install signal handlers *before* the (potentially slow) health wait
+    #    and model pull, so a SIGTERM arriving during startup requests a clean
+    #    shutdown instead of killing the process with the default disposition
+    #    (which surfaces as exit code -15).
+    _install_signal_handlers()
+
+    # 4. Wait for healthy
     try:
         ollama.wait_healthy(port, timeout_s=30)
     except OllamaUnhealthyError as exc:
@@ -80,20 +87,27 @@ def serve(ctx: click.Context, model: str, port: int) -> None:
         handle_flint_error(exc, ctx)
         return
 
-    # 4. Pull model if not already local (the daemon we just started
+    if _shutdown_requested.is_set():
+        _shutdown(proc)
+        return
+
+    # 5. Pull model if not already local (the daemon we just started
     #    handles the pull, so this works even with no pre-existing daemon).
     if not ollama.is_model_local(model, port=port):
         click.echo(f"Pulling {model}...")
         try:
             for line in ollama.pull(model, port=port):
+                if _shutdown_requested.is_set():
+                    break
                 click.echo(line)
         except OllamaError as exc:
             _shutdown(proc)
             handle_flint_error(exc, ctx)
             return  # unreachable but satisfies type checker
 
-    # 5. Install signal handlers for clean shutdown
-    _install_signal_handlers()
+    if _shutdown_requested.is_set():
+        _shutdown(proc)
+        return
 
     # 6. Print banner
     click.echo(_BANNER.format(port=port, model=model))
