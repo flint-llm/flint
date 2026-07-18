@@ -16,6 +16,8 @@ from flint.core.cluster import (
     get_model_endpoint,
     get_service_endpoint,
     has_gateway_api,
+    in_cluster_endpoint,
+    list_deployments,
     list_nodes,
 )
 from flint.core.errors import ClusterError
@@ -277,3 +279,91 @@ def test_get_model_endpoint_not_found_raises() -> None:
         mock_cls.return_value = mock_api
         with pytest.raises(ClusterError, match="not found"):
             get_model_endpoint("missing", "flint")
+
+
+# -- in_cluster_endpoint ------------------------------------------------------
+
+
+def test_in_cluster_endpoint_format() -> None:
+    assert (
+        in_cluster_endpoint("m-v1", "flint")
+        == "http://m-v1.flint.svc.cluster.local/v1"
+    )
+
+
+# -- list_deployments ---------------------------------------------------------
+
+
+def _make_deployment(
+    name: str, model: str, version: str, replicas: int | None, ready: int | None
+) -> object:
+    labels = {
+        "flint.dev/managed": "true",
+        "flint.dev/model": model,
+        "flint.dev/version": version,
+    }
+    return SimpleNamespace(
+        metadata=SimpleNamespace(name=name, labels=labels),
+        spec=SimpleNamespace(replicas=replicas),
+        status=SimpleNamespace(ready_replicas=ready),
+    )
+
+
+def _patch_apps(items: list[object]) -> tuple[object, object]:
+    response = MagicMock()
+    response.items = items
+    mock_api = MagicMock()
+    mock_api.list_namespaced_deployment.return_value = response
+    return mock_api, response
+
+
+def test_list_deployments_parses_status() -> None:
+    mock_api, _ = _patch_apps([_make_deployment("m-v1", "m", "v1", 2, 1)])
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.AppsV1Api", return_value=mock_api),
+    ):
+        result = list_deployments("flint")
+    assert len(result) == 1
+    d = result[0]
+    assert d.model_name == "m"
+    assert d.model_version == "v1"
+    assert d.replicas == 2
+    assert d.ready_replicas == 1
+    assert d.endpoint == "http://m-v1.flint.svc.cluster.local/v1"
+    kwargs = mock_api.list_namespaced_deployment.call_args.kwargs
+    assert kwargs["namespace"] == "flint"
+    assert kwargs["label_selector"] == "flint.dev/managed=true"
+
+
+def test_list_deployments_model_filter_selector() -> None:
+    mock_api, _ = _patch_apps([])
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.AppsV1Api", return_value=mock_api),
+    ):
+        list_deployments("prod", model_name="mistral")
+    kwargs = mock_api.list_namespaced_deployment.call_args.kwargs
+    assert kwargs["label_selector"] == "flint.dev/managed=true,flint.dev/model=mistral"
+
+
+def test_list_deployments_ready_replicas_none_is_zero() -> None:
+    mock_api, _ = _patch_apps([_make_deployment("m-v1", "m", "v1", 1, None)])
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.AppsV1Api", return_value=mock_api),
+    ):
+        result = list_deployments("flint")
+    assert result[0].ready_replicas == 0
+    assert result[0].replicas == 1
+
+
+def test_list_deployments_api_error_raises() -> None:
+    mock_api = MagicMock()
+    mock_api.list_namespaced_deployment.side_effect = RuntimeError("boom")
+    with (
+        patch("flint.core.cluster._load_k8s_config"),
+        patch("kubernetes.client.AppsV1Api", return_value=mock_api),
+    ):
+        with pytest.raises(ClusterError, match="Failed to list deployments"):
+            list_deployments("flint")

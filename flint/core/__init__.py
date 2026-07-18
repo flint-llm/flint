@@ -15,6 +15,8 @@ from flint.core.cluster import get_all_endpoints as get_all_endpoints
 from flint.core.cluster import get_model_endpoint as get_model_endpoint
 from flint.core.cluster import get_service_endpoint as get_service_endpoint
 from flint.core.cluster import has_gateway_api as has_gateway_api
+from flint.core.cluster import in_cluster_endpoint as in_cluster_endpoint
+from flint.core.cluster import list_deployments as list_deployments
 from flint.core.cluster import list_nodes as list_nodes
 from flint.core.deploy import build_render_context as build_render_context
 from flint.core.deploy import deploy_model as deploy_model
@@ -37,6 +39,7 @@ from flint.core.k8s_apply import scale_deployment as scale_deployment
 from flint.core.k8s_apply import wait_for_rollout as wait_for_rollout
 from flint.core.logs import get_deployment_logs as get_deployment_logs
 from flint.core.logs import stream_pod_logs as stream_pod_logs
+from flint.core.models import DeploymentStatus as DeploymentStatus
 from flint.core.models import DeployResult as DeployResult
 from flint.core.models import ModelRef as ModelRef
 from flint.core.models import ReadinessProbe as ReadinessProbe

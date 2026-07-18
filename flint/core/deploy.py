@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 from flint.core.build import resolve_runtime_image
-from flint.core.cluster import ensure_namespace
+from flint.core.cluster import ensure_namespace, in_cluster_endpoint
 from flint.core.errors import TemplateRenderError
 from flint.core.k8s_apply import kube_apply, wait_for_rollout
 from flint.core.models import (
@@ -130,7 +130,7 @@ def deploy_model(
         model_version=context.model_version,
         namespace=context.namespace,
         applied_manifests=ordered,
-        endpoint=_in_cluster_endpoint(name, context.namespace),
+        endpoint=in_cluster_endpoint(name, context.namespace),
         ready=ready,
     )
 
@@ -160,12 +160,3 @@ def _apply_priority(path: Path) -> int:
         if name.endswith(f"{kind}.yaml"):
             return i
     return len(_APPLY_ORDER)  # unknown kinds apply last (stable sort)
-
-
-def _in_cluster_endpoint(service_name: str, namespace: str) -> str:
-    """Return the OpenAI-compatible in-cluster endpoint for the service.
-
-    The Service is ClusterIP on port 80; vLLM exposes its OpenAI API under
-    ``/v1``. External routing (Gateway API HTTPRoute) is S5.
-    """
-    return f"http://{service_name}.{namespace}.svc.cluster.local/v1"

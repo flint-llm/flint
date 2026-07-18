@@ -122,6 +122,18 @@ class DeployResult(BaseModel):
     ready: bool = False
 
 
+class DeploymentStatus(BaseModel):
+    """Observed state of a flint-managed deployment."""
+
+    name: str
+    model_name: str
+    model_version: str
+    namespace: str
+    replicas: int
+    ready_replicas: int
+    endpoint: str
+
+
 # ── Utility functions ported from monolith ────────────────────────────────────
 
 

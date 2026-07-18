@@ -5,6 +5,7 @@ import click
 from flint.cli.deploy import deploy
 from flint.cli.init import init
 from flint.cli.serve import serve
+from flint.cli.status import status
 from flint.cli.version import version
 
 
@@ -27,3 +28,4 @@ cli.add_command(version)
 cli.add_command(init)
 cli.add_command(serve)
 cli.add_command(deploy)
+cli.add_command(status)
