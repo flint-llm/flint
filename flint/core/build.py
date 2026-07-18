@@ -22,9 +22,9 @@ from flint.core.errors import BuildError
 logger = logging.getLogger(__name__)
 
 # Pinned runtime image tags for reproducible deploys. Bump deliberately.
-# NOTE: vLLM ships frequent releases; confirm this tag exists in the registry
-# (`vllm/vllm-openai`) before relying on it for a real deploy, and bump as needed.
-_VLLM_IMAGE_TAG = "v0.9.2"
+# vLLM ships frequent releases; this is the latest stable at time of writing
+# (verified present in the `vllm/vllm-openai` registry). Bump as needed.
+_VLLM_IMAGE_TAG = "v0.25.1"
 
 _RUNTIME_IMAGES: dict[str, str] = {
     "vllm": f"vllm/vllm-openai:{_VLLM_IMAGE_TAG}",
