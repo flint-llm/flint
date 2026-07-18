@@ -38,6 +38,10 @@ class WeightsValidationError(FlintError):
     """Raised when traffic split weights are invalid (do not sum to 100)."""
 
 
+class ConfigError(FlintError):
+    """Raised when flint.toml cannot be read or contains invalid values."""
+
+
 class OllamaError(FlintError):
     """Raised when a local Ollama operation fails."""
 

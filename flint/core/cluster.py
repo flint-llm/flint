@@ -14,8 +14,67 @@ import warnings
 from typing import Any
 
 from flint.core.errors import ClusterError
+from flint.core.models import DeploymentStatus
 
 logger = logging.getLogger(__name__)
+
+
+def in_cluster_endpoint(service_name: str, namespace: str) -> str:
+    """Return the OpenAI-compatible in-cluster URL for a ClusterIP service.
+
+    The deploy Service is ClusterIP on port 80; vLLM serves its OpenAI API
+    under ``/v1``. External routing (Gateway API HTTPRoute) is S5.
+    """
+    return f"http://{service_name}.{namespace}.svc.cluster.local/v1"
+
+
+def list_deployments(
+    namespace: str, model_name: str | None = None
+) -> list[DeploymentStatus]:
+    """List flint-managed deployments in *namespace*.
+
+    Selects on the ``flint.dev/managed=true`` label that deploy manifests
+    carry, optionally narrowed to a single ``model_name``. Returns each
+    deployment's desired/ready replica counts and in-cluster endpoint.
+
+    Raises:
+        ClusterError: If the deployments cannot be listed.
+    """
+    _load_k8s_config()
+    import kubernetes.client as k8s_client
+
+    selector = "flint.dev/managed=true"
+    if model_name is not None:
+        selector += f",flint.dev/model={model_name}"
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        apps = k8s_client.AppsV1Api()
+        try:
+            deployments: list[Any] = apps.list_namespaced_deployment(
+                namespace=namespace, label_selector=selector
+            ).items
+        except Exception as exc:
+            raise ClusterError(
+                f"Failed to list deployments in {namespace!r}: {exc}"
+            ) from exc
+
+    results: list[DeploymentStatus] = []
+    for dep in deployments:
+        labels: dict[str, str] = dep.metadata.labels or {}
+        name = str(dep.metadata.name)
+        results.append(
+            DeploymentStatus(
+                name=name,
+                model_name=str(labels.get("flint.dev/model", name)),
+                model_version=str(labels.get("flint.dev/version", "")),
+                namespace=namespace,
+                replicas=int(dep.spec.replicas or 0),
+                ready_replicas=int(getattr(dep.status, "ready_replicas", None) or 0),
+                endpoint=in_cluster_endpoint(name, namespace),
+            )
+        )
+    return results
 
 
 def list_nodes() -> list[str]:

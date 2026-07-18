@@ -118,18 +118,18 @@ def rollout_image(
     _run_kubectl(f"kubectl rollout status deploy {deploy_name}")
 
 
-def ensure_namespace(namespace: str) -> None:
-    """Create *namespace* if it does not already exist.
+def wait_for_rollout(
+    deployment_name: str, namespace: str, timeout_s: int = 600
+) -> None:
+    """Block until *deployment_name* finishes rolling out.
 
-    TODO(S3): Use Python client instead of kubectl.
+    Raises K8sError if the rollout fails or does not complete within
+    *timeout_s* seconds (kubectl returns non-zero on timeout).
     """
-    probe = subprocess.run(
-        f"kubectl get namespace {namespace}",
-        shell=True,
-        capture_output=True,
+    _run_kubectl(
+        f"kubectl rollout status deploy/{deployment_name} "
+        f"--namespace {namespace} --timeout={timeout_s}s"
     )
-    if probe.returncode != 0:
-        _run_kubectl(f"kubectl create namespace {namespace}")
 
 
 # -- kubernetes Python client read operations ---------------------------------

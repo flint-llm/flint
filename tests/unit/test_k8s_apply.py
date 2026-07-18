@@ -14,7 +14,6 @@ from flint.core.k8s_apply import (
     _pod_name,
     _run_kubectl,
     delete_deployment,
-    ensure_namespace,
     get_pod,
     get_service,
     kube_apply,
@@ -107,29 +106,6 @@ def test_scale_deployment_calls_kubectl() -> None:
     mock_run.assert_called_once_with(
         "kubectl scale deploy my-deploy --replicas=3 --namespace=flint"
     )
-
-
-# -- ensure_namespace ---------------------------------------------------------
-
-
-def test_ensure_namespace_creates_if_missing() -> None:
-    with (
-        patch("subprocess.run") as mock_probe,
-        patch("flint.core.k8s_apply._run_kubectl") as mock_create,
-    ):
-        mock_probe.return_value = MagicMock(returncode=1)
-        ensure_namespace("new-ns")
-    mock_create.assert_called_once_with("kubectl create namespace new-ns")
-
-
-def test_ensure_namespace_skips_if_exists() -> None:
-    with (
-        patch("subprocess.run") as mock_probe,
-        patch("flint.core.k8s_apply._run_kubectl") as mock_create,
-    ):
-        mock_probe.return_value = MagicMock(returncode=0)
-        ensure_namespace("existing-ns")
-    mock_create.assert_not_called()
 
 
 # -- get_pod / get_service (mocked k8s client) --------------------------------

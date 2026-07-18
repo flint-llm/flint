@@ -12,13 +12,14 @@ from __future__ import annotations
 
 import base64
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 from flint.core.errors import WeightsValidationError
 
-SCHEMA_VERSION: int = 1
+SCHEMA_VERSION: int = 2
 
 
 class WeightsStrategy(StrEnum):
@@ -83,6 +84,7 @@ class RenderContext(BaseModel):
     hf_repo: str | None = None
     hf_token_secret: str | None = None
     service_port: int = Field(default=8080, gt=0, lt=65536)
+    weights_volume_size: str = "50Gi"
     labels: dict[str, str] = Field(default_factory=dict)
     extra: dict[str, Any] = Field(default_factory=dict)
 
@@ -107,6 +109,29 @@ class TrafficSplit(BaseModel):
         if total != 100:
             raise ValueError(f"Traffic weights sum to {total}, expected 100")
         return v
+
+
+class DeployResult(BaseModel):
+    """Outcome of a deploy: what was applied and where to reach it."""
+
+    model_name: str
+    model_version: str
+    namespace: str
+    applied_manifests: list[Path]
+    endpoint: str
+    ready: bool = False
+
+
+class DeploymentStatus(BaseModel):
+    """Observed state of a flint-managed deployment."""
+
+    name: str
+    model_name: str
+    model_version: str
+    namespace: str
+    replicas: int
+    ready_replicas: int
+    endpoint: str
 
 
 # ── Utility functions ported from monolith ────────────────────────────────────
