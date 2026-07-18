@@ -5,11 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from flint.core.deploy import (
     _order_manifests,
     build_render_context,
     deploy_model,
 )
+from flint.core.errors import TemplateRenderError
 from flint.core.models import ModelRef, RenderContext, ResourceSpec
 
 
@@ -145,6 +148,22 @@ def test_deploy_result_shape(tmp_path: Path) -> None:
 
 
 # -- _order_manifests robustness ----------------------------------------------
+
+
+def test_deploy_empty_render_raises(tmp_path: Path) -> None:
+    # A runtime with no templates renders nothing; deploy must fail loudly
+    # rather than "succeed" having applied nothing.
+    ctx = RenderContext(
+        model_name="m", model_version="v1", runtime="ollama", image="img"
+    )
+    with (
+        patch("flint.core.deploy.ensure_namespace"),
+        patch("flint.core.deploy.render_deployment_templates", return_value=[]),
+        patch("flint.core.deploy.kube_apply") as mock_apply,
+    ):
+        with pytest.raises(TemplateRenderError, match="No manifests"):
+            deploy_model(ctx, output_dir=tmp_path)
+    mock_apply.assert_not_called()
 
 
 def test_order_is_suffix_based_not_substring(tmp_path: Path) -> None:

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from flint.core.build import resolve_runtime_image
 from flint.core.cluster import ensure_namespace
+from flint.core.errors import TemplateRenderError
 from flint.core.k8s_apply import kube_apply, wait_for_rollout
 from flint.core.models import (
     DeployResult,
@@ -73,6 +74,7 @@ def deploy_model(
     context: RenderContext,
     *,
     output_dir: Path | None = None,
+    templates_dir: Path | None = None,
     wait: bool = False,
     wait_timeout_s: int = 600,
 ) -> DeployResult:
@@ -88,12 +90,14 @@ def deploy_model(
         output_dir: Where to write rendered manifests. A temp dir is used
             when omitted (kept after the call so the applied YAML can be
             inspected).
+        templates_dir: Override the built-in templates directory.
         wait: If True, block until the Deployment finishes rolling out.
         wait_timeout_s: Rollout timeout when *wait* is True.
 
     Raises:
         ClusterError: If the namespace cannot be created.
-        TemplateRenderError: If a manifest fails to render.
+        TemplateRenderError: If a manifest fails to render, or the runtime has
+            no deployable manifests.
         K8sError: If an apply or the rollout wait fails.
     """
     ensure_namespace(context.namespace)
@@ -103,8 +107,13 @@ def deploy_model(
     logger.debug("Rendering manifests into %s", output_dir)
 
     rendered = render_deployment_templates(
-        context, output_dir, runtime=context.runtime
+        context, output_dir, runtime=context.runtime, templates_dir=templates_dir
     )
+    if not rendered:
+        raise TemplateRenderError(
+            f"No manifests were rendered for runtime {context.runtime!r}. "
+            "Is it a supported deploy runtime (e.g. 'vllm')?"
+        )
     ordered = _order_manifests(rendered, include_pvc=context.hf_repo is not None)
 
     for manifest in ordered:
