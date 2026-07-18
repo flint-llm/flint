@@ -83,6 +83,7 @@ class RenderContext(BaseModel):
     hf_repo: str | None = None
     hf_token_secret: str | None = None
     service_port: int = Field(default=8080, gt=0, lt=65536)
+    weights_volume_size: str = "50Gi"
     labels: dict[str, str] = Field(default_factory=dict)
     extra: dict[str, Any] = Field(default_factory=dict)
 

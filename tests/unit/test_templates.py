@@ -112,6 +112,13 @@ def test_render_pvc_template() -> None:
     rendered = render_template("vllm/pvc.yaml.j2", ctx)
     assert "PersistentVolumeClaim" in rendered
     assert "mistral-weights" in rendered
+    assert "storage: 50Gi" in rendered  # default
+
+
+def test_render_pvc_template_custom_size() -> None:
+    ctx = _ctx(weights_volume_size="200Gi")
+    rendered = render_template("vllm/pvc.yaml.j2", ctx)
+    assert "storage: 200Gi" in rendered
 
 
 def test_render_missing_template_raises() -> None:

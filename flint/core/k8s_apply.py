@@ -118,20 +118,6 @@ def rollout_image(
     _run_kubectl(f"kubectl rollout status deploy {deploy_name}")
 
 
-def ensure_namespace(namespace: str) -> None:
-    """Create *namespace* if it does not already exist.
-
-    TODO(S3): Use Python client instead of kubectl.
-    """
-    probe = subprocess.run(
-        f"kubectl get namespace {namespace}",
-        shell=True,
-        capture_output=True,
-    )
-    if probe.returncode != 0:
-        _run_kubectl(f"kubectl create namespace {namespace}")
-
-
 # -- kubernetes Python client read operations ---------------------------------
 
 

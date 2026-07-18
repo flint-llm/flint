@@ -38,6 +38,14 @@ def test_resolve_returns_fully_qualified() -> None:
     assert ":" in img
 
 
+def test_vllm_image_is_pinned_not_latest() -> None:
+    # Deploys must be reproducible: the vLLM image must carry a concrete
+    # version tag, never a floating :latest.
+    tag = resolve_runtime_image("vllm").rsplit(":", 1)[-1]
+    assert tag != "latest"
+    assert tag.startswith("v")
+
+
 # -- push_image ---------------------------------------------------------------
 
 
