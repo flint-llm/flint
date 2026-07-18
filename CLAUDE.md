@@ -81,7 +81,7 @@ pytest --cov=flint/core --cov-report=term-missing   # with coverage
 | S0 | Complete | Repo at github.com/flint-llm/flint, CI green |
 | S1 | Complete | Monolith decomposed into 8 typed modules; CONVENTIONS.md + MONOLITH_MAP.md added |
 | S2 | Complete | `flint version`, `flint init`, `flint serve` (local Ollama mode) |
-| S3 | Not started | `flint deploy` via vLLM on Kubernetes |
+| S3 | Complete | `flint deploy` + `flint status` (vLLM on Kubernetes); writes via Python-client server-side apply |
 | S4-S7 | Not started | See FLINT_BUILD_PLAN.md |
 
 ## Running S2 commands
@@ -104,7 +104,5 @@ FLINT_E2E_OLLAMA=1 pytest tests/integration/test_serve_local.py -v
 
 | Location | TODO |
 |----------|------|
-| `k8s_apply.py` | TODO(S3): Migrate write ops to server-side apply via Python k8s client |
 | `cluster.py` | TODO(S5): Replace Ingress/Istio lookups with Gateway API HTTPRoute |
 | `routing.py` | TODO(S5): Render HTTPRoute instead of Istio RouteRules |
-| `templates/vllm/*.j2` | TODO(S3): Pin specific vLLM image tags; tune resource defaults |

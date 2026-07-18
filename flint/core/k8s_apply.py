@@ -1,13 +1,10 @@
 """Kubernetes apply, get, delete, scale, and rollout operations.
 
-Write operations (apply, delete, scale) use subprocess kubectl to preserve
-the monolith's behaviour. Read operations (get pod, get service) use the
-official Python kubernetes client.
+All operations use the official Python kubernetes client. Writes go through
+server-side apply (field manager "flint") and typed patch/delete calls; there
+is no dependence on the ``kubectl`` binary being on PATH.
 
-TODO(S3): Migrate all write operations to server-side apply via the Python
-kubernetes client with field manager "flint".
-
-Ported from monolith: _kube (3176), _kube_apply (3140), _kube_delete (3164),
+Ported from monolith: _kube_apply (3140), _kube_delete (3164),
 _get_pod_by_service_name (2731), _get_svc_by_service_name (2752),
 _service_scale (3041), _service_stop (3612), _service_rollout (1369).
 """
@@ -15,65 +12,105 @@ _service_scale (3041), _service_stop (3612), _service_rollout (1369).
 from __future__ import annotations
 
 import logging
-import subprocess
+import time
 import warnings
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from flint.core.errors import K8sError, ModelNotFoundError
 
 logger = logging.getLogger(__name__)
 
+_FIELD_MANAGER = "flint"
+_POLL_INTERVAL_S = 2
 
-# -- kubectl write operations -------------------------------------------------
 
-
-def _run_kubectl(cmd: str) -> None:
-    """Run a kubectl command and raise K8sError on failure.
-
-    Ported from monolith `_kube` (lines 3176-3181).
-    """
-    logger.debug("kubectl: %s", cmd)
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise K8sError(
-            f"kubectl failed (exit {result.returncode}): {cmd!r}\n"
-            f"stderr: {result.stderr.strip()}"
-        )
+# -- write operations (Python client) -----------------------------------------
 
 
 def kube_apply(yaml_path: Path, namespace: str) -> None:
-    """Apply a manifest file to the cluster.
+    """Server-side apply every manifest document in *yaml_path*.
 
-    Ported from monolith `_kube_apply` (lines 3140-3150).
+    Uses the dynamic client's server-side apply with field manager "flint"
+    and force-conflicts on, so flint owns the fields it manages. Handles
+    multi-document manifests.
     """
-    _run_kubectl(f"kubectl apply --namespace {namespace} -f {yaml_path}")
+    docs = _load_manifests(yaml_path)
+    client = _dynamic_client()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for doc in docs:
+            kind = str(doc.get("kind", "<unknown>"))
+            try:
+                resource = client.resources.get(
+                    api_version=doc["apiVersion"], kind=doc["kind"]
+                )
+                client.server_side_apply(
+                    resource,
+                    body=doc,
+                    namespace=namespace,
+                    field_manager=_FIELD_MANAGER,
+                    force_conflicts=True,
+                )
+            except Exception as exc:
+                raise K8sError(
+                    f"Failed to apply {kind} from {yaml_path.name}: {exc}"
+                ) from exc
 
 
 def kube_delete(yaml_path: Path, namespace: str) -> None:
-    """Delete resources defined in a manifest file.
+    """Delete every resource defined in *yaml_path*.
 
-    Ported from monolith `_kube_delete` (lines 3164-3173).
+    Missing resources (already deleted) are ignored, matching the intent of
+    ``kubectl delete --ignore-not-found``. Handles multi-document manifests.
     """
-    _run_kubectl(f"kubectl delete --namespace {namespace} -f {yaml_path}")
+    from kubernetes.dynamic.exceptions import NotFoundError
+
+    docs = _load_manifests(yaml_path)
+    client = _dynamic_client()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for doc in docs:
+            kind = str(doc.get("kind", "<unknown>"))
+            name = doc.get("metadata", {}).get("name")
+            try:
+                resource = client.resources.get(
+                    api_version=doc["apiVersion"], kind=doc["kind"]
+                )
+                client.delete(resource, name=name, namespace=namespace)
+            except NotFoundError:
+                logger.debug("%s %r already absent in %s", kind, name, namespace)
+            except Exception as exc:
+                raise K8sError(
+                    f"Failed to delete {kind} {name!r} from {yaml_path.name}: {exc}"
+                ) from exc
 
 
 def scale_deployment(deployment_name: str, replicas: int, namespace: str) -> None:
-    """Scale a deployment to *replicas* replicas.
+    """Scale a deployment to *replicas* replicas via the scale subresource."""
+    _load_k8s_config()
+    import kubernetes.client as k8s_client
 
-    Ported from monolith `_service_scale` (lines 3041-3076).
-    """
-    _run_kubectl(
-        f"kubectl scale deploy {deployment_name} "
-        f"--replicas={replicas} --namespace={namespace}"
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        apps = k8s_client.AppsV1Api()
+        try:
+            apps.patch_namespaced_deployment_scale(
+                name=deployment_name,
+                namespace=namespace,
+                body={"spec": {"replicas": replicas}},
+            )
+        except Exception as exc:
+            raise K8sError(
+                f"Failed to scale deployment {deployment_name!r} "
+                f"to {replicas} in {namespace}: {exc}"
+            ) from exc
 
 
 def delete_deployment(service_name: str, namespace: str) -> None:
-    """Delete a deployment whose name contains *service_name*.
-
-    Ported from monolith `_service_stop` (lines 3612-3643).
-    """
+    """Delete the deployment backing the pod whose name contains *service_name*."""
     pod = get_pod(service_name, namespace)
     if pod is None:
         logger.warning("No pod found matching %r in %s", service_name, namespace)
@@ -83,18 +120,28 @@ def delete_deployment(service_name: str, namespace: str) -> None:
         raise K8sError(
             f"Cannot determine deployment name for pod {_pod_name(pod)!r}"
         )
-    _run_kubectl(f"kubectl delete deploy {deploy_name} --namespace {namespace}")
+
+    _load_k8s_config()
+    import kubernetes.client as k8s_client
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        apps = k8s_client.AppsV1Api()
+        try:
+            apps.delete_namespaced_deployment(name=deploy_name, namespace=namespace)
+        except Exception as exc:
+            raise K8sError(
+                f"Failed to delete deployment {deploy_name!r} in {namespace}: {exc}"
+            ) from exc
 
 
 def rollout_image(
     service_name: str, image: str, tag: str, namespace: str
 ) -> None:
-    """Update a deployment's container image and wait for rollout to complete.
-
-    Ported from monolith `_service_rollout` (lines 1369-1409).
-    """
+    """Update a deployment's container image and wait for rollout to complete."""
     _load_k8s_config()
     import kubernetes.client as k8s_client
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         apps = k8s_client.AppsV1Api()
@@ -107,15 +154,35 @@ def rollout_image(
             break
 
     if found is None:
-        raise ModelNotFoundError(
-            f"No deployment found matching {service_name!r}"
-        )
+        raise ModelNotFoundError(f"No deployment found matching {service_name!r}")
 
-    deploy_name: str = str(found.metadata.name)
-    _run_kubectl(
-        f"kubectl set image deploy {deploy_name} {deploy_name}={image}:{tag}"
-    )
-    _run_kubectl(f"kubectl rollout status deploy {deploy_name}")
+    deploy_name = str(found.metadata.name)
+    deploy_ns = str(found.metadata.namespace)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        apps = k8s_client.AppsV1Api()
+        try:
+            apps.patch_namespaced_deployment(
+                name=deploy_name,
+                namespace=deploy_ns,
+                body={
+                    "spec": {
+                        "template": {
+                            "spec": {
+                                "containers": [
+                                    {"name": deploy_name, "image": f"{image}:{tag}"}
+                                ]
+                            }
+                        }
+                    }
+                },
+            )
+        except Exception as exc:
+            raise K8sError(
+                f"Failed to set image on deployment {deploy_name!r}: {exc}"
+            ) from exc
+
+    wait_for_rollout(deploy_name, deploy_ns)
 
 
 def wait_for_rollout(
@@ -123,13 +190,36 @@ def wait_for_rollout(
 ) -> None:
     """Block until *deployment_name* finishes rolling out.
 
-    Raises K8sError if the rollout fails or does not complete within
-    *timeout_s* seconds (kubectl returns non-zero on timeout).
+    Polls the deployment status until the observed generation has caught up
+    and updated/ready/available replicas all meet the spec. Raises K8sError
+    if that does not happen within *timeout_s* seconds.
     """
-    _run_kubectl(
-        f"kubectl rollout status deploy/{deployment_name} "
-        f"--namespace {namespace} --timeout={timeout_s}s"
-    )
+    _load_k8s_config()
+    import kubernetes.client as k8s_client
+
+    deadline = time.monotonic() + timeout_s
+    while True:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            apps = k8s_client.AppsV1Api()
+            try:
+                dep = apps.read_namespaced_deployment(deployment_name, namespace)
+            except Exception as exc:
+                raise K8sError(
+                    f"Failed to read deployment {deployment_name!r} "
+                    f"in {namespace}: {exc}"
+                ) from exc
+
+        if _rollout_complete(dep):
+            return
+        if time.monotonic() >= deadline:
+            ready = int(getattr(dep.status, "ready_replicas", 0) or 0)
+            want = int(dep.spec.replicas or 0)
+            raise K8sError(
+                f"Deployment {deployment_name!r} did not complete rollout within "
+                f"{timeout_s}s (ready {ready}/{want})"
+            )
+        time.sleep(_POLL_INTERVAL_S)
 
 
 # -- kubernetes Python client read operations ---------------------------------
@@ -172,6 +262,42 @@ def get_service(service_name: str, namespace: str) -> Any | None:
 
 
 # -- Private helpers ----------------------------------------------------------
+
+
+def _load_manifests(yaml_path: Path) -> list[dict[str, Any]]:
+    """Parse all YAML documents in *yaml_path* into a list of dicts."""
+    try:
+        docs = list(yaml.safe_load_all(yaml_path.read_text(encoding="utf-8")))
+    except (OSError, yaml.YAMLError) as exc:
+        raise K8sError(f"Failed to read manifest {yaml_path}: {exc}") from exc
+    return [d for d in docs if isinstance(d, dict)]
+
+
+def _dynamic_client() -> Any:
+    """Load kubeconfig and return a dynamic client for server-side apply."""
+    _load_k8s_config()
+    import kubernetes.client as k8s_client
+    from kubernetes import dynamic
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return dynamic.DynamicClient(k8s_client.ApiClient())
+
+
+def _rollout_complete(dep: Any) -> bool:
+    """Return True if *dep*'s status shows the current spec fully rolled out."""
+    spec_replicas = int(dep.spec.replicas or 0)
+    status = dep.status
+    generation = int(dep.metadata.generation or 0)
+    observed = int(getattr(status, "observed_generation", 0) or 0)
+    updated = int(getattr(status, "updated_replicas", 0) or 0)
+    ready = int(getattr(status, "ready_replicas", 0) or 0)
+    available = int(getattr(status, "available_replicas", 0) or 0)
+    return (
+        observed >= generation
+        and updated >= spec_replicas
+        and ready >= spec_replicas
+        and available >= spec_replicas
+    )
 
 
 def _load_k8s_config() -> None:
