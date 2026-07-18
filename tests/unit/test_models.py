@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from flint.core.errors import WeightsValidationError
 from flint.core.models import (
+    SCHEMA_VERSION,
     ModelRef,
     ReadinessProbe,
     RenderContext,
@@ -168,7 +169,7 @@ def test_render_context_schema_version() -> None:
     ctx = RenderContext(
         model_name="m", model_version="v1", runtime="vllm", image="img"
     )
-    assert ctx.schema_version == 1
+    assert ctx.schema_version == SCHEMA_VERSION
 
 
 def test_render_context_custom_resources() -> None:

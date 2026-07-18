@@ -118,6 +118,20 @@ def rollout_image(
     _run_kubectl(f"kubectl rollout status deploy {deploy_name}")
 
 
+def wait_for_rollout(
+    deployment_name: str, namespace: str, timeout_s: int = 600
+) -> None:
+    """Block until *deployment_name* finishes rolling out.
+
+    Raises K8sError if the rollout fails or does not complete within
+    *timeout_s* seconds (kubectl returns non-zero on timeout).
+    """
+    _run_kubectl(
+        f"kubectl rollout status deploy/{deployment_name} "
+        f"--namespace {namespace} --timeout={timeout_s}s"
+    )
+
+
 # -- kubernetes Python client read operations ---------------------------------
 
 
