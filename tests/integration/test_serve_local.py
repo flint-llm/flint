@@ -46,6 +46,28 @@ def _wait_for_url(url: str, timeout: float) -> bool:
     return False
 
 
+def _wait_for_model(model: str, timeout: float) -> bool:
+    """Poll /api/tags until *model* appears in the daemon's local library.
+
+    A 200 from /api/tags only means the daemon is accepting requests; the model
+    may still be pulling. The OpenAI-compatible /v1/chat/completions endpoint
+    returns 404 until the model is actually in the library, so callers must wait
+    for readiness here before sending a chat request.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            resp = httpx.get(_HEALTH_URL, timeout=2.0)
+            if resp.status_code == 200:
+                names = [m.get("name", "") for m in resp.json().get("models", [])]
+                if any(n == model or n.startswith(f"{model}:") for n in names):
+                    return True
+        except httpx.RequestError:
+            pass
+        time.sleep(1)
+    return False
+
+
 @pytest.mark.skipif(not _E2E_ENABLED, reason="FLINT_E2E_OLLAMA=1 not set")
 def test_serve_tinyllama_happy_path() -> None:
     """Start flint serve, hit the endpoint, verify streaming, shutdown cleanly."""
@@ -61,6 +83,14 @@ def test_serve_tinyllama_happy_path() -> None:
         healthy = _wait_for_url(_HEALTH_URL, _STARTUP_TIMEOUT)
         assert healthy, (
             f"Ollama server did not become healthy within {_STARTUP_TIMEOUT}s. "
+            f"Check that tinyllama is pulled: ollama pull {_MODEL}"
+        )
+
+        # A healthy daemon does not guarantee the model is servable yet; wait
+        # for it to appear in the library so the chat request below doesn't 404.
+        ready = _wait_for_model(_MODEL, _STARTUP_TIMEOUT)
+        assert ready, (
+            f"Model {_MODEL} did not become available within {_STARTUP_TIMEOUT}s. "
             f"Check that tinyllama is pulled: ollama pull {_MODEL}"
         )
 
@@ -128,6 +158,9 @@ def test_serve_sigterm_exits_cleanly() -> None:
     try:
         healthy = _wait_for_url(_HEALTH_URL, _STARTUP_TIMEOUT)
         assert healthy, "Server did not start"
+        # Reach steady state (model available) before signalling, so the SIGTERM
+        # path is exercised deterministically rather than racing a model pull.
+        assert _wait_for_model(_MODEL, _STARTUP_TIMEOUT), "Model did not become available"
     finally:
         proc.send_signal(signal.SIGTERM)
         try:

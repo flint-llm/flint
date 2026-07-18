@@ -45,14 +45,31 @@ jobs:
       - name: Install Ollama
         run: curl -fsSL https://ollama.com/install.sh | sh
 
-      - name: Start Ollama daemon and pull model
+      - name: Stop system Ollama service
+        # The install script registers ollama as a systemd service running as
+        # the 'ollama' user, which stores models under /usr/share/ollama and
+        # cannot be stopped with `pkill` from the runner user. Stop it so the
+        # daemon we run below (and the one `flint serve` starts) both run as the
+        # runner user and share the runner's model store (~/.ollama/models).
+        run: sudo systemctl stop ollama || true
+
+      - name: Pull model into the runner's store
         run: |
           ollama serve &
-          sleep 5
+          echo $! > /tmp/ollama_prepull.pid
+          # Wait for the daemon to accept connections before pulling.
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:11434/api/tags >/dev/null; then break; fi
+            sleep 1
+          done
           ollama pull tinyllama
 
       - name: Stop pre-pull daemon
-        run: pkill ollama || true && sleep 2
+        # Runner-owned now, so a targeted kill works (unlike `pkill` on the
+        # system service). `flint serve` starts its own daemon during the test.
+        run: |
+          kill "$(cat /tmp/ollama_prepull.pid)" 2>/dev/null || true
+          sleep 2
 
       - name: Run E2E tests
         # s2-verify-e2e: 2026-04-23

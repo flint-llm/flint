@@ -2,12 +2,14 @@
 
 Lifecycle:
   1. Verify ollama is on PATH (or print install hint and exit)
-  2. Check if the model is already pulled locally; pull if not
-  3. Start `ollama serve` as a subprocess
+  2. Start `ollama serve` as a subprocess
+  3. Install signal handlers so a SIGTERM during startup shuts down cleanly
   4. Wait up to 30s for the server to be healthy
-  5. Print the endpoint banner
-  6. Stream Ollama's stdout/stderr to the terminal
-  7. On SIGTERM or Ctrl+C: SIGTERM the subprocess, SIGKILL after 5s timeout
+  5. Check if the model is already pulled locally; pull if not
+     (this step talks to the daemon we just started)
+  6. Print the endpoint banner
+  7. Stream Ollama's stdout/stderr to the terminal
+  8. On SIGTERM or Ctrl+C: SIGTERM the subprocess group, SIGKILL after 5s timeout
 
 Windows is out of scope for `flint serve` (macOS and Linux only).
 `flint version` and `flint init` work on all platforms.
@@ -15,6 +17,7 @@ Windows is out of scope for `flint serve` (macOS and Linux only).
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -41,6 +44,8 @@ Example:   curl -N http://localhost:{port}/v1/chat/completions \\
 Press Ctrl+C to stop.
 """
 
+_shutdown_requested: threading.Event = threading.Event()
+
 
 @click.command("serve")
 @click.argument("model")
@@ -61,23 +66,18 @@ def serve(ctx: click.Context, model: str, port: int) -> None:
         )
         sys.exit(1)
 
-    # 2. Pull model if not already local (best-effort — may fail if no
-    #    existing daemon is running; user can pre-pull with `ollama pull`)
-    if not ollama.is_model_local(model):
-        click.echo(f"Pulling {model}...")
-        try:
-            for line in ollama.pull(model):
-                click.echo(line)
-        except OllamaError as exc:
-            handle_flint_error(exc, ctx)
-            return  # unreachable but satisfies type checker
-
-    # 3. Start ollama serve
+    # 2. Start ollama serve
     try:
         proc = ollama.serve(model, port)
     except OllamaNotFoundError as exc:
         handle_flint_error(exc, ctx)
         return
+
+    # 3. Install signal handlers *before* the (potentially slow) health wait
+    #    and model pull, so a SIGTERM arriving during startup requests a clean
+    #    shutdown instead of killing the process with the default disposition
+    #    (which surfaces as exit code -15).
+    _install_signal_handlers()
 
     # 4. Wait for healthy
     try:
@@ -87,8 +87,27 @@ def serve(ctx: click.Context, model: str, port: int) -> None:
         handle_flint_error(exc, ctx)
         return
 
-    # 5. Install signal handlers for clean shutdown
-    _install_signal_handlers(proc)
+    if _shutdown_requested.is_set():
+        _shutdown(proc)
+        return
+
+    # 5. Pull model if not already local (the daemon we just started
+    #    handles the pull, so this works even with no pre-existing daemon).
+    if not ollama.is_model_local(model, port=port):
+        click.echo(f"Pulling {model}...")
+        try:
+            for line in ollama.pull(model, port=port):
+                if _shutdown_requested.is_set():
+                    break
+                click.echo(line)
+        except OllamaError as exc:
+            _shutdown(proc)
+            handle_flint_error(exc, ctx)
+            return  # unreachable but satisfies type checker
+
+    if _shutdown_requested.is_set():
+        _shutdown(proc)
+        return
 
     # 6. Print banner
     click.echo(_BANNER.format(port=port, model=model))
@@ -99,23 +118,29 @@ def serve(ctx: click.Context, model: str, port: int) -> None:
     _start_stream_thread(proc.stdout, "[ollama] ")
     _start_stream_thread(proc.stderr, "[ollama] ")
 
-    # Block until the subprocess exits or Ctrl+C is received
-    try:
-        proc.wait()
-    except KeyboardInterrupt:
-        click.echo("\nStopping...", err=True)
-        _shutdown(proc)
-        click.echo("Stopped.")
-        sys.exit(0)
-
-    # Subprocess exited on its own (unexpected)
-    click.echo(
-        f"ollama serve exited with code {proc.returncode}.", err=True
-    )
-    sys.exit(proc.returncode or 1)
+    exit_code = _main_loop(proc)
+    sys.exit(exit_code)
 
 
 # -- Helpers ------------------------------------------------------------------
+
+
+def _main_loop(proc: subprocess.Popen[str]) -> int:
+    """Poll until the subprocess exits or shutdown is requested."""
+    while True:
+        if _shutdown_requested.is_set():
+            click.echo("\nStopping...", err=True)
+            _shutdown(proc)
+            click.echo("Stopped.")
+            return 0
+        try:
+            exit_code = proc.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            continue
+        except KeyboardInterrupt:
+            _shutdown_requested.set()
+            continue
+        return exit_code if exit_code is not None else 1
 
 
 def _start_stream_thread(stream: IO[str], prefix: str) -> None:
@@ -130,21 +155,27 @@ def _start_stream_thread(stream: IO[str], prefix: str) -> None:
 
 
 def _shutdown(proc: subprocess.Popen[str]) -> None:
-    """Gracefully stop *proc*: SIGTERM, then SIGKILL after 5s."""
+    """Gracefully stop *proc* and its process group: SIGTERM, then SIGKILL after 5s."""
     if proc.poll() is not None:
         return  # already exited
-    proc.terminate()
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except ProcessLookupError:
+        return
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         proc.wait()
 
 
-def _install_signal_handlers(proc: subprocess.Popen[str]) -> None:
-    """Install SIGTERM handler to clean up the subprocess on termination.
+def _install_signal_handlers() -> None:
+    """Install SIGTERM handler to request clean shutdown.
 
-    SIGINT (Ctrl+C) is handled by the KeyboardInterrupt catch in serve().
+    SIGINT (Ctrl+C) is handled inside _main_loop via KeyboardInterrupt.
     SIGTERM (e.g. from systemd or the E2E test harness) is handled here.
     Signal handlers are only available on Unix.
     """
@@ -152,7 +183,6 @@ def _install_signal_handlers(proc: subprocess.Popen[str]) -> None:
         return
 
     def _handler(signum: int, frame: object) -> None:
-        _shutdown(proc)
-        sys.exit(0)
+        _shutdown_requested.set()
 
     signal.signal(signal.SIGTERM, _handler)
