@@ -130,6 +130,15 @@ def test_render_ollama_deployment() -> None:
     assert "initContainers" in rendered
 
 
+def test_render_tgi_deployment() -> None:
+    ctx = _ctx(runtime="tgi", hf_repo="facebook/opt-125m")
+    rendered = render_template("runtimes/tgi/deployment.yaml.j2", ctx)
+    assert "kind: Deployment" in rendered
+    assert "MODEL_ID" in rendered
+    assert "facebook/opt-125m" in rendered  # MODEL_ID from hf_repo
+    assert "/data" in rendered  # HF cache volume
+
+
 def test_render_missing_template_raises() -> None:
     ctx = _ctx()
     with pytest.raises(TemplateRenderError, match="not found"):
