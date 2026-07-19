@@ -16,8 +16,11 @@ Requirements:
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
+import time
 
+import httpx
 import pytest
 
 _E2E_ENABLED = os.getenv("FLINT_E2E_KIND") == "1"
@@ -26,8 +29,8 @@ _MODEL = "demo"
 _NAME = f"{_MODEL}-latest"  # deploy names resources {model}-{version}
 
 
-def _run(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(list(args), capture_output=True, text=True)
+def _run(*args: str, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(list(args), capture_output=True, text=True, timeout=timeout)
 
 
 def _kubectl(*args: str) -> subprocess.CompletedProcess[str]:
@@ -90,4 +93,86 @@ def test_deploy_creates_objects_and_status_finds_them() -> None:
     finally:
         _kubectl(
             "delete", "namespace", _NAMESPACE, "--ignore-not-found", "--wait=false"
+        )
+
+
+# -- Ollama real inference (CPU-capable, so this runs in CI) -------------------
+
+_OLLAMA_NS = "flint-ollama-e2e"
+_OLLAMA_MODEL = "tinyllama"
+_OLLAMA_NAME = f"{_OLLAMA_MODEL}-latest"
+_OLLAMA_PORT = 18434
+
+
+@pytest.mark.skipif(not _E2E_ENABLED, reason="FLINT_E2E_KIND=1 not set")
+def test_ollama_deploy_serves_real_inference() -> None:
+    """Deploy a real model with the Ollama runtime and verify it serves.
+
+    Ollama runs on CPU, so unlike vLLM this exercises real inference in CI:
+    deploy tinyllama, wait for Ready, then hit /v1/chat/completions.
+    """
+    pf: subprocess.Popen[str] | None = None
+    try:
+        deploy = _run(
+            "flint",
+            "deploy",
+            _OLLAMA_MODEL,
+            "--runtime",
+            "ollama",
+            "--namespace",
+            _OLLAMA_NS,
+            "--wait",
+            "--wait-timeout",
+            "600",
+            timeout=720,
+        )
+        assert deploy.returncode == 0, (
+            f"deploy failed:\nSTDOUT:\n{deploy.stdout}\nSTDERR:\n{deploy.stderr}"
+        )
+        assert "rollout: ready" in deploy.stdout
+
+        pf = subprocess.Popen(
+            [
+                "kubectl",
+                "port-forward",
+                f"svc/{_OLLAMA_NAME}",
+                f"{_OLLAMA_PORT}:80",
+                "-n",
+                _OLLAMA_NS,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        base = f"http://localhost:{_OLLAMA_PORT}"
+        deadline = time.monotonic() + 30
+        reachable = False
+        while time.monotonic() < deadline:
+            try:
+                if httpx.get(f"{base}/api/tags", timeout=2.0).status_code == 200:
+                    reachable = True
+                    break
+            except httpx.RequestError:
+                pass
+            time.sleep(1)
+        assert reachable, "port-forward to the ollama service did not become reachable"
+
+        resp = httpx.post(
+            f"{base}/v1/chat/completions",
+            json={
+                "model": _OLLAMA_MODEL,
+                "messages": [{"role": "user", "content": "Say hello in one word."}],
+                "max_tokens": 16,
+            },
+            timeout=120.0,
+        )
+        assert resp.status_code == 200, f"{resp.status_code}: {resp.text}"
+        content = resp.json()["choices"][0]["message"]["content"]
+        assert content.strip(), "empty completion content"
+    finally:
+        if pf is not None and pf.poll() is None:
+            pf.send_signal(signal.SIGTERM)
+            pf.wait(timeout=10)
+        _kubectl(
+            "delete", "namespace", _OLLAMA_NS, "--ignore-not-found", "--wait=false"
         )

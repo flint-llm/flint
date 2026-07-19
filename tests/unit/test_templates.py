@@ -121,6 +121,15 @@ def test_render_pvc_template_custom_size() -> None:
     assert "storage: 200Gi" in rendered
 
 
+def test_render_ollama_deployment() -> None:
+    ctx = _ctx(runtime="ollama")
+    rendered = render_template("runtimes/ollama/deployment.yaml.j2", ctx)
+    assert "kind: Deployment" in rendered
+    assert "ollama pull mistral" in rendered  # pulls the model by name
+    assert "emptyDir" in rendered  # no HF weights PVC for Ollama
+    assert "initContainers" in rendered
+
+
 def test_render_missing_template_raises() -> None:
     ctx = _ctx()
     with pytest.raises(TemplateRenderError, match="not found"):

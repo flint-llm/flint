@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ model_name }}-{{ model_version }}
+  namespace: {{ namespace }}
+  labels:
+    app: {{ model_name }}
+    flint.dev/managed: "true"
+    flint.dev/model: "{{ model_name }}"
+    flint.dev/version: "{{ model_version }}"
+spec:
+  selector:
+    app: {{ model_name }}
+    flint.dev/version: "{{ model_version }}"
+  ports:
+  - name: http
+    port: 80
+    targetPort: {{ service_port }}
+  type: ClusterIP

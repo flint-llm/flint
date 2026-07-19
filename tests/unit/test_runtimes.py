@@ -7,6 +7,7 @@ import pytest
 from flint.core.errors import UnsupportedRuntimeError
 from flint.core.models import ReadinessProbe, ResourceSpec
 from flint.runtimes import RuntimeAdapter, get_adapter, supported_runtimes
+from flint.runtimes.ollama import OllamaAdapter
 from flint.runtimes.vllm import VLLMAdapter
 
 # -- registry -----------------------------------------------------------------
@@ -22,12 +23,19 @@ def test_get_adapter_unknown_raises() -> None:
         get_adapter("nonexistent")
 
 
-def test_supported_runtimes_includes_vllm() -> None:
-    assert "vllm" in supported_runtimes()
+def test_supported_runtimes_includes_vllm_and_ollama() -> None:
+    runtimes = supported_runtimes()
+    assert "vllm" in runtimes
+    assert "ollama" in runtimes
 
 
-def test_vllm_satisfies_protocol() -> None:
+def test_adapters_satisfy_protocol() -> None:
     assert isinstance(VLLMAdapter(), RuntimeAdapter)
+    assert isinstance(OllamaAdapter(), RuntimeAdapter)
+
+
+def test_get_adapter_ollama() -> None:
+    assert get_adapter("ollama").name == "ollama"
 
 
 # -- vLLM adapter -------------------------------------------------------------
@@ -51,3 +59,22 @@ def test_vllm_defaults() -> None:
     assert isinstance(probe, ReadinessProbe)
     assert probe.path == "/health"
     assert probe.port == 8080
+
+
+# -- Ollama adapter -----------------------------------------------------------
+
+
+def test_ollama_defaults() -> None:
+    adapter = OllamaAdapter()
+    assert adapter.template_subdir == "runtimes/ollama"
+    assert adapter.default_service_port() == 11434
+    assert adapter.default_resources().gpu_count == 0  # CPU by default
+    probe = adapter.default_readiness_probe()
+    assert probe.port == 11434
+    assert probe.path == "/api/tags"
+
+
+def test_ollama_image_pinned_not_latest() -> None:
+    img = OllamaAdapter().default_image()
+    assert "ollama/ollama" in img
+    assert img.rsplit(":", 1)[-1] != "latest"

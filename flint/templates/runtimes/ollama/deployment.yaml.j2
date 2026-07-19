@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ model_name }}-{{ model_version }}
+  namespace: {{ namespace }}
+  labels:
+    app: {{ model_name }}
+    flint.dev/managed: "true"
+    flint.dev/model: "{{ model_name }}"
+    flint.dev/version: "{{ model_version }}"
+    flint.dev/runtime: "{{ runtime }}"
+spec:
+  replicas: {{ replicas }}
+  selector:
+    matchLabels:
+      app: {{ model_name }}
+      flint.dev/version: "{{ model_version }}"
+  template:
+    metadata:
+      labels:
+        app: {{ model_name }}
+        flint.dev/version: "{{ model_version }}"
+    spec:
+      initContainers:
+      # Pull the model into a shared volume before the server starts, so the
+      # pod is Ready (and the model servable) as soon as `ollama serve` is up.
+      - name: model-pull
+        image: {{ image }}
+        command:
+          - /bin/sh
+          - -c
+          - |
+            ollama serve &
+            pid=$!
+            until ollama list >/dev/null 2>&1; do sleep 1; done
+            ollama pull {{ model_name }}
+            kill "$pid"
+        volumeMounts:
+        - name: models
+          mountPath: /root/.ollama
+      containers:
+      - name: ollama
+        image: {{ image }}
+        # The ollama image's default command is `ollama serve`.
+        ports:
+        - containerPort: {{ service_port }}
+          name: http
+        readinessProbe:
+          httpGet:
+            path: {{ readiness_path }}
+            port: {{ readiness_port }}
+          initialDelaySeconds: {{ readiness_initial_delay }}
+          periodSeconds: 10
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: {{ cpu_request }}
+            memory: {{ memory_request }}
+          limits:
+            cpu: {{ cpu_limit }}
+            memory: {{ memory_limit }}
+{% if gpu_count > 0 %}
+            {{ gpu_type }}: {{ gpu_count }}
+{% endif %}
+        volumeMounts:
+        - name: models
+          mountPath: /root/.ollama
+      volumes:
+      - name: models
+        emptyDir: {}

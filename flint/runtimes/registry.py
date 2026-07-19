@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from flint.core.errors import UnsupportedRuntimeError
 from flint.runtimes.base import RuntimeAdapter
+from flint.runtimes.ollama import OllamaAdapter
 from flint.runtimes.vllm import VLLMAdapter
 
 _ADAPTERS: dict[str, RuntimeAdapter] = {
     VLLMAdapter.name: VLLMAdapter(),
+    OllamaAdapter.name: OllamaAdapter(),
 }
 
 
