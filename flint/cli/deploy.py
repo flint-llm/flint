@@ -8,13 +8,14 @@ in-cluster endpoint.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import click
 
 from flint.cli._errors import handle_flint_error
 from flint.config import load_config
-from flint.core.deploy import build_render_context, deploy_model
+from flint.core.deploy import build_render_context, deploy_model, render_manifests
 from flint.core.errors import FlintError
 from flint.core.models import ModelRef, ResourceSpec
 
@@ -39,7 +40,9 @@ _DEFAULT_NAMESPACE = "flint"
 @click.option("--memory-limit", default=None, help="Memory limit (e.g. 4Gi).")
 @click.option("--service-port", default=8080, show_default=True, type=int, help="Container/service target port.")
 @click.option("--weights-volume-size", default="50Gi", show_default=True, help="Size of the weights PVC (HF-Hub only).")
-@click.option("--wait/--no-wait", default=False, help="Wait for the rollout to complete.")
+@click.option("--wait/--no-wait", default=True, show_default=True, help="Wait for the rollout to complete.")
+@click.option("--wait-timeout", default=600, show_default=True, type=int, help="Rollout wait timeout in seconds.")
+@click.option("--dry-run", is_flag=True, default=False, help="Print the rendered manifests without applying.")
 @click.option("--config", "config_path", default=None, type=click.Path(dir_okay=False), help="Path to flint.toml.")
 @click.option("--templates-dir", default=None, type=click.Path(file_okay=False), help="Override built-in templates.")
 @click.pass_context
@@ -62,6 +65,8 @@ def deploy(
     service_port: int,
     weights_volume_size: str,
     wait: bool,
+    wait_timeout: int,
+    dry_run: bool,
     config_path: str | None,
     templates_dir: str | None,
 ) -> None:
@@ -112,10 +117,22 @@ def deploy(
             weights_volume_size=weights_volume_size,
         )
 
+        templates_path = Path(resolved_templates) if resolved_templates else None
+
+        if dry_run:
+            manifests = render_manifests(context, templates_dir=templates_path)
+            for i, manifest in enumerate(manifests):
+                if i:
+                    click.echo("---")
+                click.echo(manifest.read_text(encoding="utf-8").rstrip("\n"))
+            return
+
         result = deploy_model(
             context,
-            templates_dir=Path(resolved_templates) if resolved_templates else None,
+            templates_dir=templates_path,
             wait=wait,
+            wait_timeout_s=wait_timeout,
+            on_progress=_progress_reporter() if wait else None,
         )
     except FlintError as exc:
         handle_flint_error(exc, ctx)
@@ -128,3 +145,15 @@ def deploy(
         click.echo(f"  rollout: {'ready' if result.ready else 'not ready'}")
     else:
         click.echo("  (rollout not awaited; pass --wait to block until ready)")
+
+
+def _progress_reporter() -> Callable[[str], None]:
+    """Return an on_progress callback that echoes rollout status, deduped."""
+    last: dict[str, str] = {}
+
+    def report(msg: str) -> None:
+        if last.get("msg") != msg:
+            last["msg"] = msg
+            click.echo(f"  waiting for rollout: {msg}", err=True)
+
+    return report

@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import time
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -186,13 +187,17 @@ def rollout_image(
 
 
 def wait_for_rollout(
-    deployment_name: str, namespace: str, timeout_s: int = 600
+    deployment_name: str,
+    namespace: str,
+    timeout_s: int = 600,
+    on_progress: Callable[[str], None] | None = None,
 ) -> None:
     """Block until *deployment_name* finishes rolling out.
 
     Polls the deployment status until the observed generation has caught up
     and updated/ready/available replicas all meet the spec. Raises K8sError
-    if that does not happen within *timeout_s* seconds.
+    if that does not happen within *timeout_s* seconds. When *on_progress* is
+    given, it is called each poll with a short human-readable status string.
     """
     _load_k8s_config()
     import kubernetes.client as k8s_client
@@ -210,11 +215,14 @@ def wait_for_rollout(
                     f"in {namespace}: {exc}"
                 ) from exc
 
+        ready = int(getattr(dep.status, "ready_replicas", 0) or 0)
+        want = int(dep.spec.replicas or 0)
+        if on_progress is not None:
+            on_progress(f"{ready}/{want} replicas ready")
+
         if _rollout_complete(dep):
             return
         if time.monotonic() >= deadline:
-            ready = int(getattr(dep.status, "ready_replicas", 0) or 0)
-            want = int(dep.spec.replicas or 0)
             raise K8sError(
                 f"Deployment {deployment_name!r} did not complete rollout within "
                 f"{timeout_s}s (ready {ready}/{want})"

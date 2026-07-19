@@ -276,6 +276,18 @@ def test_wait_for_rollout_returns_when_complete() -> None:
         wait_for_rollout("demo", "flint", timeout_s=5)  # returns immediately
 
 
+def test_wait_for_rollout_reports_progress() -> None:
+    mock_api = MagicMock()
+    mock_api.read_namespaced_deployment.return_value = _dep(2, 3, 3, 2, 2, 2)
+    msgs: list[str] = []
+    with (
+        patch("flint.core.k8s_apply._load_k8s_config"),
+        patch("kubernetes.client.AppsV1Api", return_value=mock_api),
+    ):
+        wait_for_rollout("demo", "flint", timeout_s=5, on_progress=msgs.append)
+    assert msgs == ["2/2 replicas ready"]
+
+
 def test_wait_for_rollout_times_out() -> None:
     mock_api = MagicMock()
     mock_api.read_namespaced_deployment.return_value = _dep(2, 3, 3, 1, 1, 1)

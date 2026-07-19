@@ -11,6 +11,7 @@ from flint.core.deploy import (
     _order_manifests,
     build_render_context,
     deploy_model,
+    render_manifests,
 )
 from flint.core.errors import TemplateRenderError
 from flint.core.models import ModelRef, RenderContext, ResourceSpec
@@ -134,7 +135,7 @@ def test_deploy_no_wait_skips_rollout(tmp_path: Path) -> None:
 
 def test_deploy_wait_calls_rollout_and_sets_ready(tmp_path: Path) -> None:
     result, _applied, _ns, mock_wait = _run_deploy(tmp_path, hf_repo=None, wait=True)
-    mock_wait.assert_called_once_with("m-v1", "flint", timeout_s=600)
+    mock_wait.assert_called_once_with("m-v1", "flint", timeout_s=600, on_progress=None)
     assert result.ready is True
 
 
@@ -164,6 +165,37 @@ def test_deploy_empty_render_raises(tmp_path: Path) -> None:
         with pytest.raises(TemplateRenderError, match="No manifests"):
             deploy_model(ctx, output_dir=tmp_path)
     mock_apply.assert_not_called()
+
+
+def test_render_manifests_orders_without_cluster_calls(tmp_path: Path) -> None:
+    ctx = RenderContext(
+        model_name="m",
+        model_version="v1",
+        runtime="vllm",
+        image="img",
+        namespace="flint",
+        hf_repo="org/m",  # PVC included
+    )
+    with patch(
+        "flint.core.deploy.render_deployment_templates",
+        return_value=_rendered(tmp_path),
+    ):
+        ordered = render_manifests(ctx, output_dir=tmp_path)
+    assert [p.name for p in ordered] == [
+        "m-v1-pvc.yaml",
+        "m-v1-deployment.yaml",
+        "m-v1-service.yaml",
+        "m-v1-hpa.yaml",
+    ]
+
+
+def test_render_manifests_empty_raises(tmp_path: Path) -> None:
+    ctx = RenderContext(
+        model_name="m", model_version="v1", runtime="ollama", image="img"
+    )
+    with patch("flint.core.deploy.render_deployment_templates", return_value=[]):
+        with pytest.raises(TemplateRenderError, match="No manifests"):
+            render_manifests(ctx, output_dir=tmp_path)
 
 
 def test_order_is_suffix_based_not_substring(tmp_path: Path) -> None:
