@@ -1,54 +1,75 @@
-"""Traffic split management and HTTPRoute rendering.
+"""Traffic split management via the Gateway API.
 
-In S1 this module ports the validation and structure from the monolith's
-Istio RouteRules approach. In S5 it will be rewritten to render Gateway API
-HTTPRoute resources and apply them via the Python kubernetes client.
+`flint route` splits traffic between deployed model versions by managing a
+Gateway API HTTPRoute per model. The HTTPRoute attaches to a pre-existing
+Gateway (the cluster/user owns the Gateway and its controller, e.g. Envoy
+Gateway) and weights its backendRefs across the per-version Services that
+`flint deploy` creates ({model}-{version}).
 
 Ported from monolith: routetraffic (3419), describeroutes (3213),
-_validate_and_prep_model_split_tag_and_weight_dict (332).
-
-TODO(S5): Replace all Istio routerules logic with Gateway API HTTPRoute.
+_validate_and_prep_model_split_tag_and_weight_dict (332). The Istio RouteRules
+approach is replaced here by Gateway API HTTPRoute.
 """
 
 from __future__ import annotations
 
 import logging
-import subprocess
-from pathlib import Path
 
+from flint.core.cluster import has_gateway_api
 from flint.core.errors import RoutingError
-from flint.core.models import TrafficSplit, TrafficWeight, validate_traffic_weights
+from flint.core.k8s_apply import get_resource, kube_apply_manifest
+from flint.core.models import (
+    TrafficSplit,
+    TrafficWeight,
+    validate_traffic_weights,
+)
 
 logger = logging.getLogger(__name__)
+
+_HTTPROUTE_API_VERSION = "gateway.networking.k8s.io/v1"
+_HTTPROUTE_KIND = "HTTPRoute"
+_BACKEND_PORT = 80
+
+
+def ensure_gateway_api_available() -> None:
+    """Raise RoutingError with install pointers if Gateway API is not installed."""
+    if not has_gateway_api():
+        raise RoutingError(
+            "Gateway API is not installed in this cluster "
+            "(CRD httproutes.gateway.networking.k8s.io not found). "
+            "Install a Gateway API implementation first, e.g. Envoy Gateway: "
+            "https://gateway.envoyproxy.io/docs/install/ — or the Gateway API "
+            "CRDs: kubectl apply -f "
+            "https://github.com/kubernetes-sigs/gateway-api/releases/latest/"
+            "download/standard-install.yaml"
+        )
 
 
 def apply_traffic_split(
     model_name: str,
     weights: dict[str, int],
     namespace: str,
-    templates_dir: Path | None = None,
-    image_registry_namespace: str = "predict",
+    *,
+    gateway_name: str,
+    gateway_namespace: str,
+    hostname: str,
 ) -> TrafficSplit:
-    """Validate a traffic split and apply it to the cluster.
-
-    Validates that *weights* sum to 100, constructs a TrafficSplit, then
-    renders and applies the routing manifest.
-
-    Ported from monolith `routetraffic` (lines 3419-3528) — validation and
-    split construction preserved; Istio-specific rendering deferred to S5.
+    """Validate a split and server-side apply the HTTPRoute for *model_name*.
 
     Args:
         model_name: The model being routed.
-        weights: Mapping of version tag to integer percentage (must sum to 100).
-        namespace: Kubernetes namespace.
-        templates_dir: Override the built-in templates directory.
-        image_registry_namespace: Resource name prefix.
+        weights: version tag -> integer percentage (must sum to 100).
+        namespace: Namespace of the model's Services and the HTTPRoute.
+        gateway_name: Name of the pre-existing Gateway to attach to.
+        gateway_namespace: Namespace of that Gateway.
+        hostname: Hostname the HTTPRoute matches (e.g. ``mymodel.local``).
 
     Returns:
         The validated TrafficSplit that was applied.
 
     Raises:
-        RoutingError: If weights are invalid or the apply operation fails.
+        RoutingError: If weights are invalid.
+        K8sError: If the apply fails.
     """
     try:
         validate_traffic_weights(weights)
@@ -57,42 +78,110 @@ def apply_traffic_split(
 
     split = TrafficSplit(
         model_name=model_name,
-        weights=[
-            TrafficWeight(version=tag, weight=int(w)) for tag, w in weights.items()
-        ],
+        weights=[TrafficWeight(version=tag, weight=int(w)) for tag, w in weights.items()],
     )
-
-    # TODO(S5): Render HTTPRoute template and apply via Python k8s client.
+    manifest = build_httproute(
+        split,
+        namespace=namespace,
+        gateway_name=gateway_name,
+        gateway_namespace=gateway_namespace,
+        hostname=hostname,
+    )
+    kube_apply_manifest(manifest, namespace)
     logger.info(
-        "Traffic split applied for %s: %s",
+        "Applied HTTPRoute for %s: %s",
         model_name,
         {tw.version: tw.weight for tw in split.weights},
     )
     return split
 
 
-def describe_routes(
-    model_name: str | None = None,
-    namespace: str = "default",
-) -> str:
-    """Return current route information for a model (or all models).
+def get_traffic_split(model_name: str, namespace: str) -> TrafficSplit | None:
+    """Read the current split from the model's HTTPRoute, or None if absent."""
+    obj = get_resource(
+        _HTTPROUTE_API_VERSION, _HTTPROUTE_KIND, model_name, namespace
+    )
+    if obj is None:
+        return None
 
-    Ported from monolith `describeroutes` (lines 3213-3241).
-    TODO(S5): Query HTTPRoute resources via the Python k8s client.
+    rules = (obj.get("spec") or {}).get("rules") or []
+    backend_refs = rules[0].get("backendRefs", []) if rules else []
+    prefix = f"{model_name}-"
+    weights: list[TrafficWeight] = []
+    for ref in backend_refs:
+        name = str(ref.get("name", ""))
+        version = name[len(prefix):] if name.startswith(prefix) else name
+        weights.append(TrafficWeight(version=version, weight=int(ref.get("weight", 0))))
+    if not weights:
+        return None
+    return TrafficSplit(model_name=model_name, weights=weights)
 
-    Returns:
-        Raw kubectl output describing the ingress resources.
+
+def canary_weights(
+    current: TrafficSplit | None, target_version: str, percent: int
+) -> dict[str, int]:
+    """Compute the weights for shifting *percent* of traffic to *target_version*.
+
+    The remaining ``100 - percent`` stays on the existing baseline version.
+    Requires exactly one existing baseline (other than the target); route a
+    baseline first with ``--to`` if there is none.
 
     Raises:
-        RoutingError: If the kubectl call fails.
+        RoutingError: If *percent* is out of range, or there is no single
+            baseline version to canary against.
     """
-    cmd = f"kubectl get ingress -o wide --namespace={namespace}"
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode != 0:
+    if not 0 <= percent <= 100:
+        raise RoutingError(f"Canary percent must be 0-100, got {percent}.")
+
+    existing = current.weights if current is not None else []
+    baselines = [w.version for w in existing if w.version != target_version and w.weight > 0]
+    if not baselines:
         raise RoutingError(
-            f"Failed to list ingress resources: {result.stderr.strip()}"
+            "No baseline version to canary against. Route a baseline first: "
+            "flint route <model> --to <version>."
         )
-    return result.stdout
+    if len(baselines) > 1:
+        raise RoutingError(
+            f"Canary requires a single baseline version; the current split has "
+            f"{sorted(baselines)}. Consolidate first with --to <version>."
+        )
+    return {baselines[0]: 100 - percent, target_version: percent}
+
+
+def build_httproute(
+    split: TrafficSplit,
+    *,
+    namespace: str,
+    gateway_name: str,
+    gateway_namespace: str,
+    hostname: str,
+) -> dict[str, object]:
+    """Build the Gateway API HTTPRoute manifest for a validated *split*."""
+    backend_refs = [
+        {
+            "name": f"{split.model_name}-{tw.version}",
+            "port": _BACKEND_PORT,
+            "weight": tw.weight,
+        }
+        for tw in split.weights
+    ]
+    return {
+        "apiVersion": _HTTPROUTE_API_VERSION,
+        "kind": _HTTPROUTE_KIND,
+        "metadata": {
+            "name": split.model_name,
+            "namespace": namespace,
+            "labels": {
+                "flint.dev/managed": "true",
+                "flint.dev/model": split.model_name,
+            },
+        },
+        "spec": {
+            "parentRefs": [{"name": gateway_name, "namespace": gateway_namespace}],
+            "hostnames": [hostname],
+            "rules": [{"backendRefs": backend_refs}],
+        },
+    }
 
 
 def validate_shadow_routes(
@@ -101,12 +190,11 @@ def validate_shadow_routes(
 ) -> None:
     """Validate that shadow-routed variants have weight=0 in the split.
 
-    Ported from monolith `routetraffic` shadow validation block
-    (lines 3468-3485).
+    Shadow routing itself is a v0.2 feature (Gateway API mirror support is
+    uneven); this validation is retained for callers that pre-declare shadows.
 
     Raises:
-        RoutingError: If a shadow tag is missing from *weights* or has
-            weight > 0.
+        RoutingError: If a shadow tag is missing from *weights* or has weight > 0.
     """
     for tag in shadow_tags:
         if tag not in weights:

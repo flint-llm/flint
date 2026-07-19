@@ -43,22 +43,40 @@ def kube_apply(yaml_path: Path, namespace: str) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         for doc in docs:
-            kind = str(doc.get("kind", "<unknown>"))
-            try:
-                resource = client.resources.get(
-                    api_version=doc["apiVersion"], kind=doc["kind"]
-                )
-                client.server_side_apply(
-                    resource,
-                    body=doc,
-                    namespace=namespace,
-                    field_manager=_FIELD_MANAGER,
-                    force_conflicts=True,
-                )
-            except Exception as exc:
-                raise K8sError(
-                    f"Failed to apply {kind} from {yaml_path.name}: {exc}"
-                ) from exc
+            _server_side_apply(client, doc, namespace, source=yaml_path.name)
+
+
+def kube_apply_manifest(manifest: dict[str, Any], namespace: str) -> None:
+    """Server-side apply a single manifest given as a dict (field manager 'flint').
+
+    Used for resources built in code rather than rendered from a file (e.g.
+    the routing HTTPRoute).
+    """
+    client = _dynamic_client()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        _server_side_apply(client, manifest, namespace, source=str(manifest.get("kind")))
+
+
+def get_resource(
+    api_version: str, kind: str, name: str, namespace: str
+) -> dict[str, Any] | None:
+    """Return a namespaced resource as a plain dict, or None if it does not exist."""
+    from kubernetes.dynamic.exceptions import NotFoundError
+
+    client = _dynamic_client()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            resource = client.resources.get(api_version=api_version, kind=kind)
+            obj = client.get(resource, name=name, namespace=namespace)
+        except NotFoundError:
+            return None
+        except Exception as exc:
+            raise K8sError(
+                f"Failed to get {kind} {name!r} in {namespace}: {exc}"
+            ) from exc
+    return dict(obj.to_dict())
 
 
 def kube_delete(yaml_path: Path, namespace: str) -> None:
@@ -279,6 +297,26 @@ def _load_manifests(yaml_path: Path) -> list[dict[str, Any]]:
     except (OSError, yaml.YAMLError) as exc:
         raise K8sError(f"Failed to read manifest {yaml_path}: {exc}") from exc
     return [d for d in docs if isinstance(d, dict)]
+
+
+def _server_side_apply(
+    client: Any, doc: dict[str, Any], namespace: str, source: str
+) -> None:
+    """Server-side apply one manifest *doc*. Must run inside catch_warnings."""
+    kind = str(doc.get("kind", "<unknown>"))
+    try:
+        resource = client.resources.get(
+            api_version=doc["apiVersion"], kind=doc["kind"]
+        )
+        client.server_side_apply(
+            resource,
+            body=doc,
+            namespace=namespace,
+            field_manager=_FIELD_MANAGER,
+            force_conflicts=True,
+        )
+    except Exception as exc:
+        raise K8sError(f"Failed to apply {kind} from {source}: {exc}") from exc
 
 
 def _dynamic_client() -> Any:

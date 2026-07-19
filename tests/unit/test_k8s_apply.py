@@ -15,8 +15,10 @@ from flint.core.k8s_apply import (
     _rollout_complete,
     delete_deployment,
     get_pod,
+    get_resource,
     get_service,
     kube_apply,
+    kube_apply_manifest,
     kube_delete,
     rollout_image,
     scale_deployment,
@@ -99,6 +101,43 @@ def test_kube_apply_error_wrapped(tmp_path: Path) -> None:
     with patch("flint.core.k8s_apply._dynamic_client", return_value=client):
         with pytest.raises(K8sError, match="Failed to apply Deployment"):
             kube_apply(manifest, "flint")
+
+
+# -- kube_apply_manifest / get_resource ---------------------------------------
+
+
+def test_kube_apply_manifest_server_side_applies() -> None:
+    client = MagicMock()
+    manifest = {
+        "apiVersion": "gateway.networking.k8s.io/v1",
+        "kind": "HTTPRoute",
+        "metadata": {"name": "llama"},
+    }
+    with patch("flint.core.k8s_apply._dynamic_client", return_value=client):
+        kube_apply_manifest(manifest, "flint")
+    call = client.server_side_apply.call_args
+    assert call.kwargs["namespace"] == "flint"
+    assert call.kwargs["field_manager"] == "flint"
+    assert call.kwargs["force_conflicts"] is True
+    assert call.kwargs["body"]["kind"] == "HTTPRoute"
+
+
+def test_get_resource_found() -> None:
+    client = MagicMock()
+    client.get.return_value.to_dict.return_value = {"kind": "HTTPRoute"}
+    with patch("flint.core.k8s_apply._dynamic_client", return_value=client):
+        obj = get_resource("gateway.networking.k8s.io/v1", "HTTPRoute", "m", "flint")
+    assert obj == {"kind": "HTTPRoute"}
+
+
+def test_get_resource_not_found_returns_none() -> None:
+    from kubernetes.client.exceptions import ApiException
+    from kubernetes.dynamic.exceptions import NotFoundError
+
+    client = MagicMock()
+    client.get.side_effect = NotFoundError(ApiException(status=404))
+    with patch("flint.core.k8s_apply._dynamic_client", return_value=client):
+        assert get_resource("gateway.networking.k8s.io/v1", "HTTPRoute", "m", "f") is None
 
 
 # -- kube_delete --------------------------------------------------------------

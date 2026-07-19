@@ -31,8 +31,10 @@ from flint.core.errors import TemplateRenderError as TemplateRenderError
 from flint.core.errors import WeightsValidationError as WeightsValidationError
 from flint.core.k8s_apply import delete_deployment as delete_deployment
 from flint.core.k8s_apply import get_pod as get_pod
+from flint.core.k8s_apply import get_resource as get_resource
 from flint.core.k8s_apply import get_service as get_service
 from flint.core.k8s_apply import kube_apply as kube_apply
+from flint.core.k8s_apply import kube_apply_manifest as kube_apply_manifest
 from flint.core.k8s_apply import kube_delete as kube_delete
 from flint.core.k8s_apply import rollout_image as rollout_image
 from flint.core.k8s_apply import scale_deployment as scale_deployment
@@ -53,7 +55,12 @@ from flint.core.models import is_base64_encoded as is_base64_encoded
 from flint.core.models import normalize_model_name as normalize_model_name
 from flint.core.models import validate_traffic_weights as validate_traffic_weights
 from flint.core.routing import apply_traffic_split as apply_traffic_split
-from flint.core.routing import describe_routes as describe_routes
+from flint.core.routing import build_httproute as build_httproute
+from flint.core.routing import canary_weights as canary_weights
+from flint.core.routing import (
+    ensure_gateway_api_available as ensure_gateway_api_available,
+)
+from flint.core.routing import get_traffic_split as get_traffic_split
 from flint.core.routing import validate_shadow_routes as validate_shadow_routes
 from flint.core.templates import get_templates_dir as get_templates_dir
 from flint.core.templates import (
