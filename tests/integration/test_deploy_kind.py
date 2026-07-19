@@ -176,3 +176,45 @@ def test_ollama_deploy_serves_real_inference() -> None:
         _kubectl(
             "delete", "namespace", _OLLAMA_NS, "--ignore-not-found", "--wait=false"
         )
+
+
+# -- TGI smoke test (GPU-only image; stub avoids a 10GB pull in CI) ------------
+
+_TGI_NS = "flint-tgi-e2e"
+_TGI_MODEL = "tgi-demo"
+_TGI_NAME = f"{_TGI_MODEL}-latest"
+
+
+@pytest.mark.skipif(not _E2E_ENABLED, reason="FLINT_E2E_KIND=1 not set")
+def test_tgi_deploy_creates_objects() -> None:
+    """Deploy via the TGI runtime and assert the TGI-shaped objects exist.
+
+    TGI needs a GPU (and a ~10GB CUDA image), so CI uses a stub image and
+    --no-wait: this validates the TGI template/adapter path (MODEL_ID env,
+    port 80) without pulling the real image. Real TGI inference is the gated
+    GPU test in test_deploy_gpu.py.
+    """
+    try:
+        deploy = _run(
+            "flint", "deploy", _TGI_MODEL,
+            "--runtime", "tgi",
+            "--image", "nginx:stable",
+            "--gpu", "0",
+            "--namespace", _TGI_NS,
+            "--no-wait",
+        )
+        assert deploy.returncode == 0, (
+            f"deploy failed:\nSTDOUT:\n{deploy.stdout}\nSTDERR:\n{deploy.stderr}"
+        )
+        assert _kubectl("get", "deploy", _TGI_NAME, "-n", _TGI_NS).returncode == 0
+        assert _kubectl("get", "svc", _TGI_NAME, "-n", _TGI_NS).returncode == 0
+        assert _kubectl("get", "hpa", _TGI_NAME, "-n", _TGI_NS).returncode == 0
+
+        # TGI-shaped: the container carries the MODEL_ID env var.
+        env = _kubectl(
+            "get", "deploy", _TGI_NAME, "-n", _TGI_NS,
+            "-o", "jsonpath={.spec.template.spec.containers[0].env[*].name}",
+        ).stdout
+        assert "MODEL_ID" in env
+    finally:
+        _kubectl("delete", "namespace", _TGI_NS, "--ignore-not-found", "--wait=false")

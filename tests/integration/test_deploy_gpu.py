@@ -116,3 +116,66 @@ def test_deploy_serves_real_inference() -> None:
         _kubectl(
             "delete", "namespace", _NAMESPACE, "--ignore-not-found", "--wait=false"
         )
+
+
+_TGI_NAMESPACE = "flint-tgi-gpu-e2e"
+_TGI_MODEL = "opt-125m"
+_TGI_HF_REPO = "facebook/opt-125m"
+_TGI_NAME = f"{_TGI_MODEL}-latest"
+_TGI_LOCAL_PORT = 18081
+_TGI_BASE = f"http://localhost:{_TGI_LOCAL_PORT}"
+
+
+@pytest.mark.skipif(not _E2E_ENABLED, reason="FLINT_E2E_GPU=1 not set")
+def test_tgi_deploy_serves_real_inference() -> None:
+    """Deploy a real model with the TGI runtime on a GPU cluster and verify it."""
+    pf: subprocess.Popen[str] | None = None
+    try:
+        deploy = _run(
+            "flint", "deploy", _TGI_MODEL,
+            "--runtime", "tgi",
+            "--hf-repo", _TGI_HF_REPO,
+            "--gpu", "1",
+            "--namespace", _TGI_NAMESPACE,
+            "--wait", "--wait-timeout", str(_DEPLOY_TIMEOUT),
+            timeout=_DEPLOY_TIMEOUT + 120,
+        )
+        assert deploy.returncode == 0, (
+            f"deploy failed:\nSTDOUT:\n{deploy.stdout}\nSTDERR:\n{deploy.stderr}"
+        )
+        assert "rollout: ready" in deploy.stdout
+
+        pf = subprocess.Popen(
+            ["kubectl", "port-forward", f"svc/{_TGI_NAME}",
+             f"{_TGI_LOCAL_PORT}:80", "-n", _TGI_NAMESPACE],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.monotonic() + 30
+        reachable = False
+        while time.monotonic() < deadline:
+            try:
+                if httpx.get(f"{_TGI_BASE}/health", timeout=2.0).status_code < 500:
+                    reachable = True
+                    break
+            except httpx.RequestError:
+                pass
+            time.sleep(1)
+        assert reachable, "port-forward to the TGI service did not become reachable"
+
+        resp = httpx.post(
+            f"{_TGI_BASE}/v1/chat/completions",
+            json={
+                "model": _TGI_MODEL,  # TGI serves the loaded MODEL_ID
+                "messages": [{"role": "user", "content": "Say hello in one word."}],
+                "max_tokens": 16,
+            },
+            timeout=60.0,
+        )
+        assert resp.status_code == 200, f"{resp.status_code}: {resp.text}"
+        content = resp.json()["choices"][0]["message"]["content"]
+        assert content.strip(), "empty completion content"
+    finally:
+        if pf is not None and pf.poll() is None:
+            pf.send_signal(signal.SIGTERM)
+            pf.wait(timeout=10)
+        _kubectl("delete", "namespace", _TGI_NAMESPACE, "--ignore-not-found", "--wait=false")

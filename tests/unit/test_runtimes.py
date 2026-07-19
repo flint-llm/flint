@@ -8,6 +8,7 @@ from flint.core.errors import UnsupportedRuntimeError
 from flint.core.models import ReadinessProbe, ResourceSpec
 from flint.runtimes import RuntimeAdapter, get_adapter, supported_runtimes
 from flint.runtimes.ollama import OllamaAdapter
+from flint.runtimes.tgi import TGIAdapter
 from flint.runtimes.vllm import VLLMAdapter
 
 # -- registry -----------------------------------------------------------------
@@ -23,19 +24,19 @@ def test_get_adapter_unknown_raises() -> None:
         get_adapter("nonexistent")
 
 
-def test_supported_runtimes_includes_vllm_and_ollama() -> None:
-    runtimes = supported_runtimes()
-    assert "vllm" in runtimes
-    assert "ollama" in runtimes
+def test_supported_runtimes_includes_all_three() -> None:
+    assert set(supported_runtimes()) >= {"vllm", "ollama", "tgi"}
 
 
 def test_adapters_satisfy_protocol() -> None:
     assert isinstance(VLLMAdapter(), RuntimeAdapter)
     assert isinstance(OllamaAdapter(), RuntimeAdapter)
+    assert isinstance(TGIAdapter(), RuntimeAdapter)
 
 
-def test_get_adapter_ollama() -> None:
+def test_get_adapter_ollama_and_tgi() -> None:
     assert get_adapter("ollama").name == "ollama"
+    assert get_adapter("tgi").name == "tgi"
 
 
 # -- vLLM adapter -------------------------------------------------------------
@@ -77,4 +78,22 @@ def test_ollama_defaults() -> None:
 def test_ollama_image_pinned_not_latest() -> None:
     img = OllamaAdapter().default_image()
     assert "ollama/ollama" in img
+    assert img.rsplit(":", 1)[-1] != "latest"
+
+
+# -- TGI adapter --------------------------------------------------------------
+
+
+def test_tgi_defaults() -> None:
+    adapter = TGIAdapter()
+    assert adapter.template_subdir == "runtimes/tgi"
+    assert adapter.default_service_port() == 80
+    probe = adapter.default_readiness_probe()
+    assert probe.port == 80
+    assert probe.path == "/health"
+
+
+def test_tgi_image_pinned_not_latest() -> None:
+    img = TGIAdapter().default_image()
+    assert "text-generation-inference" in img
     assert img.rsplit(":", 1)[-1] != "latest"
