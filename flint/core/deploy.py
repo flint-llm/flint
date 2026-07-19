@@ -17,7 +17,7 @@ from pathlib import Path
 
 from flint.core.cluster import ensure_namespace, in_cluster_endpoint
 from flint.core.errors import TemplateRenderError
-from flint.core.k8s_apply import kube_apply, wait_for_rollout
+from flint.core.k8s_apply import delete_by_label, kube_apply, wait_for_rollout
 from flint.core.models import (
     DeployResult,
     ModelRef,
@@ -33,6 +33,14 @@ logger = logging.getLogger(__name__)
 # Apply order by resource kind. A weights PVC must exist before the Deployment
 # that mounts it; the Service and HPA reference the Deployment, so they follow.
 _APPLY_ORDER: tuple[str, ...] = ("pvc", "deployment", "service", "hpa")
+
+# Versioned resources deleted per model version (respect --version).
+_VERSIONED_KINDS: tuple[tuple[str, str], ...] = (
+    ("apps/v1", "Deployment"),
+    ("v1", "Service"),
+    ("autoscaling/v2", "HorizontalPodAutoscaler"),
+)
+_HTTPROUTE_API_VERSION = "gateway.networking.k8s.io/v1"
 
 
 def build_render_context(
@@ -171,6 +179,45 @@ def deploy_model(
         endpoint=in_cluster_endpoint(name, context.namespace),
         ready=ready,
     )
+
+
+def delete_model(
+    model_name: str,
+    namespace: str,
+    *,
+    version: str | None = None,
+    keep_weights: bool = False,
+) -> list[str]:
+    """Delete a model's flint-managed resources; return what was removed.
+
+    Removes the Deployment/Service/HPA for the model (all versions, or just
+    *version* if given). When deleting the whole model (no *version*), also
+    removes the weights PVC (unless *keep_weights*) and the HTTPRoute. Matches
+    on the ``flint.dev/model`` label, so only flint-managed resources are
+    touched. Idempotent — deleting an absent model returns an empty list.
+
+    Raises:
+        K8sError: If a delete call fails.
+    """
+    label = f"flint.dev/model={model_name}"
+    versioned = label + (f",flint.dev/version={version}" if version else "")
+
+    deleted: list[str] = []
+    for api_version, kind in _VERSIONED_KINDS:
+        deleted += delete_by_label(api_version, kind, namespace, versioned)
+
+    if version is None:
+        if not keep_weights:
+            deleted += delete_by_label(
+                "v1", "PersistentVolumeClaim", namespace, label
+            )
+        # The HTTPRoute only exists if traffic was routed; skip if the Gateway
+        # API CRD is not even installed.
+        deleted += delete_by_label(
+            _HTTPROUTE_API_VERSION, "HTTPRoute", namespace, label,
+            ignore_missing_crd=True,
+        )
+    return deleted
 
 
 # -- Private helpers ----------------------------------------------------------

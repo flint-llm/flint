@@ -13,6 +13,7 @@ from flint.core.k8s_apply import (
     _deployment_name_from_pod,
     _pod_name,
     _rollout_complete,
+    delete_by_label,
     delete_deployment,
     get_pod,
     get_resource,
@@ -138,6 +139,43 @@ def test_get_resource_not_found_returns_none() -> None:
     client.get.side_effect = NotFoundError(ApiException(status=404))
     with patch("flint.core.k8s_apply._dynamic_client", return_value=client):
         assert get_resource("gateway.networking.k8s.io/v1", "HTTPRoute", "m", "f") is None
+
+
+# -- delete_by_label ----------------------------------------------------------
+
+
+def test_delete_by_label_deletes_matching() -> None:
+    client = MagicMock()
+    client.get.return_value.items = [
+        SimpleNamespace(metadata=SimpleNamespace(name="demo-v1")),
+        SimpleNamespace(metadata=SimpleNamespace(name="demo-v2")),
+    ]
+    with patch("flint.core.k8s_apply._dynamic_client", return_value=client):
+        deleted = delete_by_label("apps/v1", "Deployment", "flint", "flint.dev/model=demo")
+    assert deleted == ["Deployment/demo-v1", "Deployment/demo-v2"]
+    client.delete.assert_called_once()
+
+
+def test_delete_by_label_none_matched_no_delete() -> None:
+    client = MagicMock()
+    client.get.return_value.items = []
+    with patch("flint.core.k8s_apply._dynamic_client", return_value=client):
+        deleted = delete_by_label("apps/v1", "Deployment", "flint", "flint.dev/model=demo")
+    assert deleted == []
+    client.delete.assert_not_called()
+
+
+def test_delete_by_label_missing_crd_ignored() -> None:
+    from kubernetes.dynamic.exceptions import ResourceNotFoundError
+
+    client = MagicMock()
+    client.resources.get.side_effect = ResourceNotFoundError("no such CRD")
+    with patch("flint.core.k8s_apply._dynamic_client", return_value=client):
+        deleted = delete_by_label(
+            "gateway.networking.k8s.io/v1", "HTTPRoute", "flint",
+            "flint.dev/model=demo", ignore_missing_crd=True,
+        )
+    assert deleted == []
 
 
 # -- kube_delete --------------------------------------------------------------

@@ -107,6 +107,52 @@ def kube_delete(yaml_path: Path, namespace: str) -> None:
                 ) from exc
 
 
+def delete_by_label(
+    api_version: str,
+    kind: str,
+    namespace: str,
+    label_selector: str,
+    *,
+    ignore_missing_crd: bool = False,
+) -> list[str]:
+    """Delete all *kind* resources matching *label_selector*; return their names.
+
+    Returns the ``"{kind}/{name}"`` of each deleted resource (empty if none
+    matched). When *ignore_missing_crd* is True, a missing resource kind (e.g.
+    HTTPRoute when the Gateway API is not installed) is silently skipped.
+    """
+    from kubernetes.dynamic.exceptions import NotFoundError, ResourceNotFoundError
+
+    client = _dynamic_client()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            resource = client.resources.get(api_version=api_version, kind=kind)
+        except ResourceNotFoundError as exc:
+            if ignore_missing_crd:
+                return []
+            raise K8sError(
+                f"Resource kind {kind!r} ({api_version}) not found"
+            ) from exc
+        try:
+            listing = client.get(
+                resource, namespace=namespace, label_selector=label_selector
+            )
+            names = [str(item.metadata.name) for item in listing.items]
+            if names:
+                client.delete(
+                    resource, namespace=namespace, label_selector=label_selector
+                )
+        except NotFoundError:
+            return []
+        except Exception as exc:
+            raise K8sError(
+                f"Failed to delete {kind} by label {label_selector!r} "
+                f"in {namespace}: {exc}"
+            ) from exc
+    return [f"{kind}/{n}" for n in names]
+
+
 def scale_deployment(deployment_name: str, replicas: int, namespace: str) -> None:
     """Scale a deployment to *replicas* replicas via the scale subresource."""
     _load_k8s_config()
