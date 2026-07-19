@@ -26,6 +26,32 @@ logger = logging.getLogger(__name__)
 
 _FIELD_MANAGER = "flint"
 _POLL_INTERVAL_S = 2
+_RETRY_ATTEMPTS = 3
+_RETRY_BASE_DELAY_S = 0.5
+_TRANSIENT_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True if *exc* is a retryable transient Kubernetes API error."""
+    from kubernetes.client.exceptions import ApiException
+
+    if isinstance(exc, ApiException):  # covers DynamicApiError subclasses
+        return exc.status in _TRANSIENT_STATUSES
+    return isinstance(exc, (ConnectionError, TimeoutError))
+
+
+def _retry(fn: Callable[[], Any]) -> Any:
+    """Call *fn*, retrying transient API errors with exponential backoff."""
+    delay = _RETRY_BASE_DELAY_S
+    for attempt in range(_RETRY_ATTEMPTS):
+        try:
+            return fn()
+        except Exception as exc:
+            if attempt == _RETRY_ATTEMPTS - 1 or not _is_transient(exc):
+                raise
+            logger.debug("transient k8s error (attempt %d): %s", attempt + 1, exc)
+            time.sleep(delay)
+            delay *= 2
 
 
 # -- write operations (Python client) -----------------------------------------
@@ -69,7 +95,7 @@ def get_resource(
         warnings.simplefilter("ignore")
         try:
             resource = client.resources.get(api_version=api_version, kind=kind)
-            obj = client.get(resource, name=name, namespace=namespace)
+            obj = _retry(lambda: client.get(resource, name=name, namespace=namespace))
         except NotFoundError:
             return None
         except Exception as exc:
@@ -354,12 +380,14 @@ def _server_side_apply(
         resource = client.resources.get(
             api_version=doc["apiVersion"], kind=doc["kind"]
         )
-        client.server_side_apply(
-            resource,
-            body=doc,
-            namespace=namespace,
-            field_manager=_FIELD_MANAGER,
-            force_conflicts=True,
+        _retry(
+            lambda: client.server_side_apply(
+                resource,
+                body=doc,
+                namespace=namespace,
+                field_manager=_FIELD_MANAGER,
+                force_conflicts=True,
+            )
         )
     except Exception as exc:
         raise K8sError(f"Failed to apply {kind} from {source}: {exc}") from exc

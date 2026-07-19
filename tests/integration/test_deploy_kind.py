@@ -169,6 +169,11 @@ def test_ollama_deploy_serves_real_inference() -> None:
         assert resp.status_code == 200, f"{resp.status_code}: {resp.text}"
         content = resp.json()["choices"][0]["message"]["content"]
         assert content.strip(), "empty completion content"
+
+        # `flint logs` against the running pod returns output.
+        got_logs = _run("flint", "logs", _OLLAMA_MODEL, "-n", _OLLAMA_NS, "--tail", "20")
+        assert got_logs.returncode == 0, got_logs.stderr
+        assert got_logs.stdout.strip(), "expected some log output from flint logs"
     finally:
         if pf is not None and pf.poll() is None:
             pf.send_signal(signal.SIGTERM)
