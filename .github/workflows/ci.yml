@@ -94,4 +94,7 @@ jobs:
           cluster_name: flint-e2e
 
       - name: Run kind E2E tests
+        # Smoke test only: asserts the K8s objects are created + idempotent.
+        # Real vLLM inference needs a GPU (no CPU image exists), so it is a
+        # manually-run gated test: FLINT_E2E_GPU=1 pytest tests/integration/test_deploy_gpu.py
         run: FLINT_E2E_KIND=1 pytest tests/integration/test_deploy_kind.py -v
