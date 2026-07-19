@@ -10,6 +10,7 @@ import pytest
 from flint.core.deploy import (
     _order_manifests,
     build_render_context,
+    delete_model,
     deploy_model,
     render_manifests,
 )
@@ -196,6 +197,48 @@ def test_render_manifests_empty_raises(tmp_path: Path) -> None:
     with patch("flint.core.deploy.render_deployment_templates", return_value=[]):
         with pytest.raises(TemplateRenderError, match="No manifests"):
             render_manifests(ctx, output_dir=tmp_path)
+
+
+def test_delete_model_all_versions_deletes_everything() -> None:
+    with patch("flint.core.deploy.delete_by_label", return_value=[]) as m:
+        delete_model("demo", "flint")
+    kinds = [c.args[1] for c in m.call_args_list]
+    assert kinds == [
+        "Deployment",
+        "Service",
+        "HorizontalPodAutoscaler",
+        "PersistentVolumeClaim",
+        "HTTPRoute",
+    ]
+    # versioned selector is the model label only (no version)
+    assert m.call_args_list[0].args[3] == "flint.dev/model=demo"
+    # the HTTPRoute delete tolerates a missing Gateway API CRD
+    assert m.call_args_list[-1].kwargs.get("ignore_missing_crd") is True
+
+
+def test_delete_model_version_scopes_and_keeps_shared() -> None:
+    with patch("flint.core.deploy.delete_by_label", return_value=[]) as m:
+        delete_model("demo", "flint", version="v1")
+    kinds = [c.args[1] for c in m.call_args_list]
+    assert kinds == ["Deployment", "Service", "HorizontalPodAutoscaler"]
+    assert m.call_args_list[0].args[3] == "flint.dev/model=demo,flint.dev/version=v1"
+
+
+def test_delete_model_keep_weights_skips_pvc() -> None:
+    with patch("flint.core.deploy.delete_by_label", return_value=[]) as m:
+        delete_model("demo", "flint", keep_weights=True)
+    kinds = [c.args[1] for c in m.call_args_list]
+    assert "PersistentVolumeClaim" not in kinds
+    assert "HTTPRoute" in kinds
+
+
+def test_delete_model_returns_deleted_names() -> None:
+    with patch(
+        "flint.core.deploy.delete_by_label",
+        side_effect=[["Deployment/demo-v1"], ["Service/demo-v1"], [], [], []],
+    ):
+        deleted = delete_model("demo", "flint")
+    assert deleted == ["Deployment/demo-v1", "Service/demo-v1"]
 
 
 def test_order_is_suffix_based_not_substring(tmp_path: Path) -> None:

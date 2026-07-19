@@ -2,8 +2,10 @@
 
 import click
 
+from flint.cli.delete import delete
 from flint.cli.deploy import deploy
 from flint.cli.init import init
+from flint.cli.list import list_cmd
 from flint.cli.route import route
 from flint.cli.serve import serve
 from flint.cli.status import status
@@ -31,3 +33,5 @@ cli.add_command(serve)
 cli.add_command(deploy)
 cli.add_command(status)
 cli.add_command(route)
+cli.add_command(list_cmd)
+cli.add_command(delete)

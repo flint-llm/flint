@@ -18,6 +18,7 @@ from flint.core.cluster import in_cluster_endpoint as in_cluster_endpoint
 from flint.core.cluster import list_deployments as list_deployments
 from flint.core.cluster import list_nodes as list_nodes
 from flint.core.deploy import build_render_context as build_render_context
+from flint.core.deploy import delete_model as delete_model
 from flint.core.deploy import deploy_model as deploy_model
 from flint.core.deploy import render_manifests as render_manifests
 from flint.core.errors import BuildError as BuildError
@@ -29,6 +30,7 @@ from flint.core.errors import ModelNotFoundError as ModelNotFoundError
 from flint.core.errors import RoutingError as RoutingError
 from flint.core.errors import TemplateRenderError as TemplateRenderError
 from flint.core.errors import WeightsValidationError as WeightsValidationError
+from flint.core.k8s_apply import delete_by_label as delete_by_label
 from flint.core.k8s_apply import delete_deployment as delete_deployment
 from flint.core.k8s_apply import get_pod as get_pod
 from flint.core.k8s_apply import get_resource as get_resource

@@ -218,3 +218,48 @@ def test_tgi_deploy_creates_objects() -> None:
         assert "MODEL_ID" in env
     finally:
         _kubectl("delete", "namespace", _TGI_NS, "--ignore-not-found", "--wait=false")
+
+
+# -- list / delete lifecycle (CPU-friendly, runs in CI) -----------------------
+
+_OPS_NS = "flint-ops-e2e"
+_OPS_MODEL = "opsdemo"
+_OPS_NAME = f"{_OPS_MODEL}-latest"
+
+
+def _deploy_ops_stub() -> subprocess.CompletedProcess[str]:
+    return _run(
+        "flint", "deploy", _OPS_MODEL,
+        "--image", "nginx:stable", "--gpu", "0",
+        "--namespace", _OPS_NS, "--no-wait",
+    )
+
+
+@pytest.mark.skipif(not _E2E_ENABLED, reason="FLINT_E2E_KIND=1 not set")
+def test_list_and_delete_lifecycle() -> None:
+    try:
+        assert _deploy_ops_stub().returncode == 0
+
+        # `flint list` shows the deployment.
+        lst = _run("flint", "list", "-n", _OPS_NS)
+        assert lst.returncode == 0, lst.stderr
+        assert f"{_OPS_MODEL}:latest" in lst.stdout
+
+        # `flint delete` removes Deployment/Service/HPA.
+        dele = _run("flint", "delete", _OPS_MODEL, "-n", _OPS_NS, "--yes")
+        assert dele.returncode == 0, dele.stderr
+        assert _kubectl("get", "deploy", _OPS_NAME, "-n", _OPS_NS).returncode != 0
+        assert _kubectl("get", "svc", _OPS_NAME, "-n", _OPS_NS).returncode != 0
+        assert _kubectl("get", "hpa", _OPS_NAME, "-n", _OPS_NS).returncode != 0
+        assert f"{_OPS_MODEL}:latest" not in _run("flint", "list", "-n", _OPS_NS).stdout
+
+        # Delete is idempotent: a second delete removes nothing, exits 0.
+        again = _run("flint", "delete", _OPS_MODEL, "-n", _OPS_NS, "--yes")
+        assert again.returncode == 0
+        assert "Nothing to delete" in again.stdout
+
+        # Redeploy with identical args recreates the objects (fresh state).
+        assert _deploy_ops_stub().returncode == 0
+        assert _kubectl("get", "deploy", _OPS_NAME, "-n", _OPS_NS).returncode == 0
+    finally:
+        _kubectl("delete", "namespace", _OPS_NS, "--ignore-not-found", "--wait=false")
