@@ -59,3 +59,30 @@ def test_status_error_handled_no_traceback() -> None:
 def test_status_registered_in_group() -> None:
     result = CliRunner().invoke(cli, ["--help"])
     assert "status" in result.output
+
+
+def test_status_model_shows_traffic_split() -> None:
+    from flint.core.models import TrafficSplit, TrafficWeight
+
+    split = TrafficSplit(
+        model_name="m",
+        weights=[TrafficWeight(version="v1", weight=70), TrafficWeight(version="v2", weight=30)],
+    )
+    with (
+        patch("flint.cli.status.list_deployments", return_value=[_dep()]),
+        patch("flint.cli.status.get_traffic_split", return_value=split),
+    ):
+        result = CliRunner().invoke(cli, ["status", "m"])
+    assert result.exit_code == 0, result.output
+    assert "traffic split" in result.output
+    assert "v1: 70%" in result.output
+
+
+def test_status_no_route_omits_split() -> None:
+    with (
+        patch("flint.cli.status.list_deployments", return_value=[_dep()]),
+        patch("flint.cli.status.get_traffic_split", return_value=None),
+    ):
+        result = CliRunner().invoke(cli, ["status", "m"])
+    assert result.exit_code == 0
+    assert "traffic split" not in result.output

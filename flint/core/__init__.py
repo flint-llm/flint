@@ -41,8 +41,8 @@ from flint.core.k8s_apply import kube_delete as kube_delete
 from flint.core.k8s_apply import rollout_image as rollout_image
 from flint.core.k8s_apply import scale_deployment as scale_deployment
 from flint.core.k8s_apply import wait_for_rollout as wait_for_rollout
-from flint.core.logs import get_deployment_logs as get_deployment_logs
-from flint.core.logs import stream_pod_logs as stream_pod_logs
+from flint.core.logs import find_model_pod as find_model_pod
+from flint.core.logs import iter_pod_logs as iter_pod_logs
 from flint.core.models import DeploymentStatus as DeploymentStatus
 from flint.core.models import DeployResult as DeployResult
 from flint.core.models import ModelRef as ModelRef

@@ -19,6 +19,8 @@ spec:
     metadata:
       labels:
         app: {{ model_name }}
+        flint.dev/managed: "true"
+        flint.dev/model: "{{ model_name }}"
         flint.dev/version: "{{ model_version }}"
     spec:
 {% if hf_repo %}

@@ -141,6 +141,56 @@ def test_get_resource_not_found_returns_none() -> None:
         assert get_resource("gateway.networking.k8s.io/v1", "HTTPRoute", "m", "f") is None
 
 
+# -- _retry (transient-error backoff) -----------------------------------------
+
+
+def test_retry_succeeds_after_transient() -> None:
+    from kubernetes.client.exceptions import ApiException
+
+    from flint.core.k8s_apply import _retry
+
+    calls: list[int] = []
+
+    def fn() -> str:
+        calls.append(1)
+        if len(calls) < 2:
+            raise ApiException(status=503)
+        return "ok"
+
+    with patch("time.sleep"):
+        assert _retry(fn) == "ok"
+    assert len(calls) == 2
+
+
+def test_retry_reraises_non_transient_immediately() -> None:
+    from kubernetes.client.exceptions import ApiException
+
+    from flint.core.k8s_apply import _retry
+
+    calls: list[int] = []
+
+    def fn() -> None:
+        calls.append(1)
+        raise ApiException(status=404)
+
+    with pytest.raises(ApiException):
+        _retry(fn)
+    assert len(calls) == 1  # not retried
+
+
+def test_retry_exhausts_on_persistent_transient() -> None:
+    from kubernetes.client.exceptions import ApiException
+
+    from flint.core.k8s_apply import _retry
+
+    def fn() -> None:
+        raise ApiException(status=503)
+
+    with patch("time.sleep"):
+        with pytest.raises(ApiException):
+            _retry(fn)
+
+
 # -- delete_by_label ----------------------------------------------------------
 
 

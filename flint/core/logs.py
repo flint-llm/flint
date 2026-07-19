@@ -1,82 +1,117 @@
-"""Pod log retrieval via kubectl.
+"""Pod log retrieval via the Python kubernetes client.
 
-Ported from monolith: _service_logs (2872), deploy_clusterlogs (2851).
-
-S6 will add --since, --tail, and structured log parsing via the Python
-kubernetes client watch API.
+Finds the pod backing a flint-managed model (by the flint.dev/model label) and
+yields its logs, with optional follow / since / tail. No kubectl dependency.
 """
 
 from __future__ import annotations
 
 import logging
-import subprocess
+import warnings
+from collections.abc import Iterator
+from typing import Any
 
 from flint.core.errors import K8sError, ModelNotFoundError
-from flint.core.k8s_apply import get_pod
+from flint.core.k8s_apply import _load_k8s_config
 
 logger = logging.getLogger(__name__)
 
 
-def stream_pod_logs(
-    service_name: str,
-    namespace: str,
-    container_name: str | None = None,
-    follow: bool = True,
-) -> None:
-    """Tail logs from the pod matching *service_name*.
+def find_model_pod(
+    model_name: str, namespace: str, version: str | None = None
+) -> str:
+    """Return a pod name for *model_name* (preferring a Running pod).
 
-    Ported from monolith `_service_logs` (lines 2872-2908).
-
-    Args:
-        service_name: Substring used to locate the pod.
-        namespace: Kubernetes namespace.
-        container_name: Optional container name for multi-container pods.
-        follow: If True, follow the log stream (``kubectl logs -f``).
+    Selects on the ``flint.dev/model`` label (optionally narrowed to
+    *version*).
 
     Raises:
-        ModelNotFoundError: If no pod matching *service_name* is found.
-        K8sError: If kubectl logs exits non-zero.
+        ModelNotFoundError: If no matching pod exists.
+        K8sError: If the pod list call fails.
     """
-    pod = get_pod(service_name, namespace)
-    if pod is None:
+    _load_k8s_config()
+    import kubernetes.client as k8s_client
+
+    selector = f"flint.dev/model={model_name}"
+    if version:
+        selector += f",flint.dev/version={version}"
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        v1 = k8s_client.CoreV1Api()
+        try:
+            pods: list[Any] = v1.list_namespaced_pod(
+                namespace, label_selector=selector
+            ).items
+        except Exception as exc:
+            raise K8sError(
+                f"Failed to list pods for {model_name!r} in {namespace}: {exc}"
+            ) from exc
+
+    if not pods:
         raise ModelNotFoundError(
-            f"No pod found matching {service_name!r} in namespace {namespace!r}"
+            f"No pods found for model {model_name!r} in namespace {namespace!r}."
         )
-
-    pod_name: str = str(pod.metadata.name)
-    follow_flag = "-f" if follow else ""
-
-    if container_name:
-        cmd = (
-            f"kubectl logs {follow_flag} {pod_name} "
-            f"-c {container_name} --namespace={namespace}"
-        )
-    else:
-        cmd = f"kubectl logs {follow_flag} {pod_name} --namespace={namespace}"
-
-    logger.debug("Streaming logs: %s", cmd)
-    result = subprocess.run(cmd, shell=True)
-    if result.returncode != 0:
-        raise K8sError(f"kubectl logs failed for pod {pod_name!r}")
+    running = [p for p in pods if str(getattr(p.status, "phase", "")) == "Running"]
+    chosen = running[0] if running else pods[0]
+    return str(chosen.metadata.name)
 
 
-def get_deployment_logs(
+def iter_pod_logs(
     model_name: str,
-    model_version: str,
     namespace: str,
-    image_registry_namespace: str = "predict",
-    follow: bool = True,
-) -> None:
-    """Fetch logs for a deployed model.
+    *,
+    version: str | None = None,
+    container: str | None = None,
+    since_seconds: int | None = None,
+    tail_lines: int | None = None,
+    follow: bool = False,
+) -> Iterator[str]:
+    """Yield log text for *model_name*'s pod.
 
-    Convenience wrapper over stream_pod_logs.
-    Ported from monolith `deploy_clusterlogs` (lines 2851-2869).
+    Without *follow*, yields the current logs once. With *follow*, streams new
+    output until the caller stops iterating. Text is yielded in chunks, not
+    necessarily whole lines.
+
+    Raises:
+        ModelNotFoundError: If no pod is found.
+        K8sError: If the log request fails.
     """
-    service_name = f"{image_registry_namespace}-{model_name}-{model_version}"
-    container_name = f"{image_registry_namespace}-{model_name}"
-    stream_pod_logs(
-        service_name=service_name,
-        namespace=namespace,
-        container_name=container_name,
-        follow=follow,
-    )
+    pod_name = find_model_pod(model_name, namespace, version)
+    _load_k8s_config()
+    import kubernetes.client as k8s_client
+
+    kwargs: dict[str, Any] = {"name": pod_name, "namespace": namespace}
+    if container is not None:
+        kwargs["container"] = container
+    if since_seconds is not None:
+        kwargs["since_seconds"] = since_seconds
+    if tail_lines is not None:
+        kwargs["tail_lines"] = tail_lines
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        v1 = k8s_client.CoreV1Api()
+        if follow:
+            try:
+                resp = v1.read_namespaced_pod_log(
+                    follow=True, _preload_content=False, **kwargs
+                )
+            except Exception as exc:
+                raise K8sError(
+                    f"Failed to stream logs for {pod_name!r}: {exc}"
+                ) from exc
+            try:
+                for chunk in resp.stream():
+                    yield chunk.decode("utf-8", errors="replace")
+            finally:
+                resp.release_conn()
+        else:
+            try:
+                text = v1.read_namespaced_pod_log(**kwargs)
+            except Exception as exc:
+                raise K8sError(
+                    f"Failed to read logs for {pod_name!r}: {exc}"
+                ) from exc
+            if text:
+                yield str(text)
