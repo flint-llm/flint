@@ -20,3 +20,6 @@ htmlcov/
 *.pyc
 .DS_Store
 Thumbs.db
+
+# Internal planning docs (kept local, not published)
+build_docs/
