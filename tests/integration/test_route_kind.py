@@ -28,7 +28,7 @@ _E2E_ENABLED = os.getenv("FLINT_E2E_ROUTE") == "1"
 _NS = "flint-route-e2e"
 _MODEL = "demo"
 _HOST = f"{_MODEL}.local"  # flint route's default hostname
-_GATEWAY = "flint-gateway"
+_GATEWAY_NAME = "flint-gateway"
 _LOCAL_PORT = 18080
 
 _GATEWAY_CLASS = """
@@ -40,11 +40,11 @@ spec:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
 """
 
-_GATEWAY = f"""
+_GATEWAY_MANIFEST = f"""
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: {_GATEWAY}
+  name: {_GATEWAY_NAME}
   namespace: {_NS}
 spec:
   gatewayClassName: flint-eg
@@ -129,7 +129,7 @@ def _envoy_service() -> str:
     """Return the Envoy proxy Service name that fronts our Gateway."""
     res = _kubectl(
         "get", "svc", "-n", "envoy-gateway-system",
-        "-l", f"gateway.envoyproxy.io/owning-gateway-name={_GATEWAY}",
+        "-l", f"gateway.envoyproxy.io/owning-gateway-name={_GATEWAY_NAME}",
         "-o", "jsonpath={.items[0].metadata.name}",
     )
     assert res.returncode == 0 and res.stdout.strip(), (
@@ -156,7 +156,7 @@ def test_route_split_and_cutover() -> None:
     try:
         _kubectl("create", "namespace", _NS)
         _apply(_GATEWAY_CLASS)
-        _apply(_GATEWAY)
+        _apply(_GATEWAY_MANIFEST)
         _apply(_backend("v1"))
         _apply(_backend("v2"))
 
@@ -167,9 +167,9 @@ def test_route_split_and_cutover() -> None:
             "-n", _NS, "--timeout=180s",
         ).returncode == 0
         assert _kubectl(
-            "wait", "--for=condition=Programmed", f"gateway/{_GATEWAY}",
+            "wait", "--for=condition=Programmed", f"gateway/{_GATEWAY_NAME}",
             "-n", _NS, "--timeout=300s",
-        ).returncode == 0, _kubectl("describe", "gateway", _GATEWAY, "-n", _NS).stdout
+        ).returncode == 0, _kubectl("describe", "gateway", _GATEWAY_NAME, "-n", _NS).stdout
 
         # Baseline (100% v1), then a 50/50 canary.
         _flint_route("--to", "v1")
