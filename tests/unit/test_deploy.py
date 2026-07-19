@@ -13,7 +13,7 @@ from flint.core.deploy import (
     deploy_model,
     render_manifests,
 )
-from flint.core.errors import TemplateRenderError
+from flint.core.errors import TemplateRenderError, UnsupportedRuntimeError
 from flint.core.models import ModelRef, RenderContext, ResourceSpec
 
 
@@ -30,14 +30,12 @@ def _rendered(tmp: Path, model: str = "m", version: str = "v1") -> list[Path]:
 # -- build_render_context -----------------------------------------------------
 
 
-def test_build_context_resolves_runtime_image() -> None:
+def test_build_context_uses_adapter_defaults() -> None:
     model = ModelRef(name="mistral", version="v1")
-    with patch(
-        "flint.core.deploy.resolve_runtime_image", return_value="vllm/img:tag"
-    ) as mock_resolve:
-        ctx = build_render_context(model, "vllm", "flint")
-    mock_resolve.assert_called_once_with("vllm")
-    assert ctx.image == "vllm/img:tag"
+    ctx = build_render_context(model, "vllm", "flint")
+    assert "vllm/vllm-openai" in ctx.image  # adapter default image
+    assert ctx.service_port == 8080  # adapter default port
+    assert ctx.readiness_probe.path == "/health"  # adapter default probe
     assert ctx.model_name == "mistral"
     assert ctx.namespace == "flint"
     assert ctx.runtime == "vllm"
@@ -45,25 +43,27 @@ def test_build_context_resolves_runtime_image() -> None:
 
 def test_build_context_prefers_explicit_image() -> None:
     model = ModelRef(name="mistral", version="v1", image="custom/img:1")
-    with patch("flint.core.deploy.resolve_runtime_image") as mock_resolve:
-        ctx = build_render_context(model, "vllm", "flint")
-    mock_resolve.assert_not_called()
+    ctx = build_render_context(model, "vllm", "flint")
     assert ctx.image == "custom/img:1"
+
+
+def test_build_context_unsupported_runtime_raises() -> None:
+    with pytest.raises(UnsupportedRuntimeError, match="Unsupported runtime"):
+        build_render_context(ModelRef(name="m", version="v1"), "bogus", "flint")
 
 
 def test_build_context_threads_hf_repo_and_overrides() -> None:
     model = ModelRef(name="mistral", version="v1", hf_repo="org/mistral")
-    with patch("flint.core.deploy.resolve_runtime_image", return_value="img"):
-        ctx = build_render_context(
-            model,
-            "vllm",
-            "prod",
-            replicas=3,
-            resources=ResourceSpec(gpu_count=2),
-            hf_token_secret="hf-secret",
-            service_port=9000,
-            weights_volume_size="100Gi",
-        )
+    ctx = build_render_context(
+        model,
+        "vllm",
+        "prod",
+        replicas=3,
+        resources=ResourceSpec(gpu_count=2),
+        hf_token_secret="hf-secret",
+        service_port=9000,
+        weights_volume_size="100Gi",
+    )
     assert ctx.hf_repo == "org/mistral"
     assert ctx.replicas == 3
     assert ctx.resources.gpu_count == 2
@@ -155,7 +155,7 @@ def test_deploy_empty_render_raises(tmp_path: Path) -> None:
     # A runtime with no templates renders nothing; deploy must fail loudly
     # rather than "succeed" having applied nothing.
     ctx = RenderContext(
-        model_name="m", model_version="v1", runtime="ollama", image="img"
+        model_name="m", model_version="v1", runtime="vllm", image="img"
     )
     with (
         patch("flint.core.deploy.ensure_namespace"),
@@ -191,7 +191,7 @@ def test_render_manifests_orders_without_cluster_calls(tmp_path: Path) -> None:
 
 def test_render_manifests_empty_raises(tmp_path: Path) -> None:
     ctx = RenderContext(
-        model_name="m", model_version="v1", runtime="ollama", image="img"
+        model_name="m", model_version="v1", runtime="vllm", image="img"
     )
     with patch("flint.core.deploy.render_deployment_templates", return_value=[]):
         with pytest.raises(TemplateRenderError, match="No manifests"):

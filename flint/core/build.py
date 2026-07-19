@@ -1,8 +1,8 @@
 """Image registry pull and push operations.
 
 Flint v0.1 does NOT build container images. This module handles only
-pull and push of pre-built runtime images (vLLM, Ollama, TGI) and
-resolves the default image for each supported runtime.
+pull and push of pre-built runtime images. The default image for each
+runtime is owned by that runtime's adapter (see ``flint/runtimes/``).
 
 Architecture note (from FLINT_ARCHITECTURE.md):
     "Flint does not build container images in v0.1. Custom model-baked
@@ -20,17 +20,6 @@ import subprocess
 from flint.core.errors import BuildError
 
 logger = logging.getLogger(__name__)
-
-# Pinned runtime image tags for reproducible deploys. Bump deliberately.
-# vLLM ships frequent releases; this is the latest stable at time of writing
-# (verified present in the `vllm/vllm-openai` registry). Bump as needed.
-_VLLM_IMAGE_TAG = "v0.25.1"
-
-_RUNTIME_IMAGES: dict[str, str] = {
-    "vllm": f"vllm/vllm-openai:{_VLLM_IMAGE_TAG}",
-    "ollama": "ollama/ollama:latest",
-    "tgi": "ghcr.io/huggingface/text-generation-inference:latest",
-}
 
 
 def push_image(image_ref: str) -> None:
@@ -81,26 +70,3 @@ def pull_image(image_ref: str) -> None:
         raise BuildError(
             f"docker pull failed for {image_ref!r}:\n{result.stderr.strip()}"
         )
-
-
-def resolve_runtime_image(runtime: str) -> str:
-    """Return the default container image for a given runtime.
-
-    This is the image Flint uses when the user has not specified ``--image``.
-    Image tags are pinned per-runtime in S3; these are the default image roots.
-
-    Args:
-        runtime: One of ``"vllm"``, ``"ollama"``, ``"tgi"``.
-
-    Returns:
-        A fully-qualified image reference string.
-
-    Raises:
-        BuildError: If the runtime is not supported.
-    """
-    if runtime not in _RUNTIME_IMAGES:
-        raise BuildError(
-            f"Unknown runtime {runtime!r}. "
-            f"Supported runtimes: {sorted(_RUNTIME_IMAGES)}"
-        )
-    return _RUNTIME_IMAGES[runtime]

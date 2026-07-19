@@ -53,7 +53,7 @@ def render_template(
 
     Args:
         template_name: Relative path inside the templates directory,
-            e.g. ``"vllm/deployment.yaml.j2"``.
+            e.g. ``"runtimes/vllm/deployment.yaml.j2"``.
         context: Validated RenderContext with all template variables.
         templates_dir: Override the built-in templates directory.
 

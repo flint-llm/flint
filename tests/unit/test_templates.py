@@ -27,7 +27,7 @@ def test_get_templates_dir_exists() -> None:
 
 def test_get_templates_dir_contains_vllm() -> None:
     d = get_templates_dir()
-    assert (d / "vllm").is_dir()
+    assert (d / "runtimes" / "vllm").is_dir()
 
 
 # -- resolve_templates_path ---------------------------------------------------
@@ -88,7 +88,7 @@ def _ctx(**kwargs: object) -> RenderContext:
 
 def test_render_deployment_template_produces_yaml() -> None:
     ctx = _ctx()
-    rendered = render_template("vllm/deployment.yaml.j2", ctx)
+    rendered = render_template("runtimes/vllm/deployment.yaml.j2", ctx)
     assert "kind: Deployment" in rendered
     assert "mistral-v1" in rendered
     assert "namespace: flint" in rendered
@@ -96,20 +96,20 @@ def test_render_deployment_template_produces_yaml() -> None:
 
 def test_render_service_template() -> None:
     ctx = _ctx()
-    rendered = render_template("vllm/service.yaml.j2", ctx)
+    rendered = render_template("runtimes/vllm/service.yaml.j2", ctx)
     assert "kind: Service" in rendered
     assert "mistral-v1" in rendered
 
 
 def test_render_hpa_template() -> None:
     ctx = _ctx()
-    rendered = render_template("vllm/hpa.yaml.j2", ctx)
+    rendered = render_template("runtimes/vllm/hpa.yaml.j2", ctx)
     assert "HorizontalPodAutoscaler" in rendered
 
 
 def test_render_pvc_template() -> None:
     ctx = _ctx()
-    rendered = render_template("vllm/pvc.yaml.j2", ctx)
+    rendered = render_template("runtimes/vllm/pvc.yaml.j2", ctx)
     assert "PersistentVolumeClaim" in rendered
     assert "mistral-weights" in rendered
     assert "storage: 50Gi" in rendered  # default
@@ -117,14 +117,14 @@ def test_render_pvc_template() -> None:
 
 def test_render_pvc_template_custom_size() -> None:
     ctx = _ctx(weights_volume_size="200Gi")
-    rendered = render_template("vllm/pvc.yaml.j2", ctx)
+    rendered = render_template("runtimes/vllm/pvc.yaml.j2", ctx)
     assert "storage: 200Gi" in rendered
 
 
 def test_render_missing_template_raises() -> None:
     ctx = _ctx()
     with pytest.raises(TemplateRenderError, match="not found"):
-        render_template("vllm/nonexistent.yaml.j2", ctx)
+        render_template("runtimes/vllm/nonexistent.yaml.j2", ctx)
 
 
 def test_render_with_custom_dir(tmp_path: Path) -> None:
@@ -147,7 +147,7 @@ def test_render_strict_undefined_raises_on_missing_var(tmp_path: Path) -> None:
 def test_render_template_to_file(tmp_path: Path) -> None:
     ctx = _ctx()
     out = tmp_path / "out.yaml"
-    render_template_to_file("vllm/service.yaml.j2", ctx, out)
+    render_template_to_file("runtimes/vllm/service.yaml.j2", ctx, out)
     assert out.exists()
     content = out.read_text()
     assert "kind: Service" in content
@@ -156,7 +156,7 @@ def test_render_template_to_file(tmp_path: Path) -> None:
 def test_render_template_to_file_creates_parents(tmp_path: Path) -> None:
     ctx = _ctx()
     out = tmp_path / "nested" / "dir" / "out.yaml"
-    render_template_to_file("vllm/service.yaml.j2", ctx, out)
+    render_template_to_file("runtimes/vllm/service.yaml.j2", ctx, out)
     assert out.exists()
 
 
@@ -165,7 +165,7 @@ def test_render_template_to_file_creates_parents(tmp_path: Path) -> None:
 
 def test_render_deployment_templates_returns_paths(tmp_path: Path) -> None:
     ctx = _ctx()
-    paths = render_deployment_templates(ctx, tmp_path)
+    paths = render_deployment_templates(ctx, tmp_path, runtime="runtimes/vllm")
     assert len(paths) >= 3
     for p in paths:
         assert p.exists()
@@ -174,7 +174,7 @@ def test_render_deployment_templates_returns_paths(tmp_path: Path) -> None:
 
 def test_render_deployment_templates_filenames(tmp_path: Path) -> None:
     ctx = _ctx()
-    paths = render_deployment_templates(ctx, tmp_path)
+    paths = render_deployment_templates(ctx, tmp_path, runtime="runtimes/vllm")
     names = [p.name for p in paths]
     assert any("deployment" in n for n in names)
     assert any("service" in n for n in names)

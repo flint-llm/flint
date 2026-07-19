@@ -6,45 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from flint.core.build import pull_image, push_image, resolve_runtime_image
+from flint.core.build import pull_image, push_image
 from flint.core.errors import BuildError
-
-# -- resolve_runtime_image (pure) ---------------------------------------------
-
-
-def test_resolve_vllm() -> None:
-    img = resolve_runtime_image("vllm")
-    assert "vllm" in img
-
-
-def test_resolve_ollama() -> None:
-    img = resolve_runtime_image("ollama")
-    assert "ollama" in img
-
-
-def test_resolve_tgi() -> None:
-    img = resolve_runtime_image("tgi")
-    assert "text-generation-inference" in img
-
-
-def test_resolve_unknown_raises() -> None:
-    with pytest.raises(BuildError, match="Unknown runtime"):
-        resolve_runtime_image("nonexistent")
-
-
-def test_resolve_returns_fully_qualified() -> None:
-    img = resolve_runtime_image("vllm")
-    assert "/" in img
-    assert ":" in img
-
-
-def test_vllm_image_is_pinned_not_latest() -> None:
-    # Deploys must be reproducible: the vLLM image must carry a concrete
-    # version tag, never a floating :latest.
-    tag = resolve_runtime_image("vllm").rsplit(":", 1)[-1]
-    assert tag != "latest"
-    assert tag.startswith("v")
-
 
 # -- push_image ---------------------------------------------------------------
 

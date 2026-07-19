@@ -15,7 +15,6 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from flint.core.build import resolve_runtime_image
 from flint.core.cluster import ensure_namespace, in_cluster_endpoint
 from flint.core.errors import TemplateRenderError
 from flint.core.k8s_apply import kube_apply, wait_for_rollout
@@ -27,6 +26,7 @@ from flint.core.models import (
     ResourceSpec,
 )
 from flint.core.templates import render_deployment_templates
+from flint.runtimes import get_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -44,29 +44,35 @@ def build_render_context(
     resources: ResourceSpec | None = None,
     readiness_probe: ReadinessProbe | None = None,
     hf_token_secret: str | None = None,
-    service_port: int = 8080,
+    service_port: int | None = None,
     weights_volume_size: str = "50Gi",
 ) -> RenderContext:
     """Assemble a :class:`RenderContext` from a model ref and overrides.
 
-    The image is taken from ``model.image`` when set, otherwise resolved from
-    *runtime* via :func:`resolve_runtime_image`. HF-Hub weights
-    (``model.hf_repo``) flow through so the deployment template mounts the
-    weights PVC.
+    Runtime-specific defaults (image, port, readiness probe, resources) come
+    from the runtime's adapter; any explicit override wins. The image is taken
+    from ``model.image`` when set, otherwise the adapter's default. HF-Hub
+    weights (``model.hf_repo``) flow through so the deployment template mounts
+    the weights PVC.
+
+    Raises:
+        UnsupportedRuntimeError: If *runtime* has no registered adapter.
     """
-    image = model.image or resolve_runtime_image(runtime)
+    adapter = get_adapter(runtime)
     return RenderContext(
         model_name=model.name,
         model_version=model.version,
         namespace=namespace,
         runtime=runtime,
-        image=image,
+        image=model.image or adapter.default_image(),
         replicas=replicas,
-        resources=resources or ResourceSpec(),
-        readiness_probe=readiness_probe or ReadinessProbe(),
+        resources=resources or adapter.default_resources(),
+        readiness_probe=readiness_probe or adapter.default_readiness_probe(),
         hf_repo=model.hf_repo,
         hf_token_secret=hf_token_secret,
-        service_port=service_port,
+        service_port=service_port
+        if service_port is not None
+        else adapter.default_service_port(),
         weights_volume_size=weights_volume_size,
     )
 
@@ -92,13 +98,17 @@ def render_manifests(
         output_dir = Path(tempfile.mkdtemp(prefix="flint-deploy-"))
     logger.debug("Rendering manifests into %s", output_dir)
 
+    adapter = get_adapter(context.runtime)
     rendered = render_deployment_templates(
-        context, output_dir, runtime=context.runtime, templates_dir=templates_dir
+        context,
+        output_dir,
+        runtime=adapter.template_subdir,
+        templates_dir=templates_dir,
     )
     if not rendered:
         raise TemplateRenderError(
-            f"No manifests were rendered for runtime {context.runtime!r}. "
-            "Is it a supported deploy runtime (e.g. 'vllm')?"
+            f"No manifests were rendered for runtime {context.runtime!r} "
+            f"(templates: {adapter.template_subdir})."
         )
     return _order_manifests(rendered, include_pvc=context.hf_repo is not None)
 
