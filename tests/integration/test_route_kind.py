@@ -125,17 +125,34 @@ def _flint_route(*args: str) -> None:
     assert res.returncode == 0, f"flint route {args} failed:\n{res.stdout}\n{res.stderr}"
 
 
+_OWNER_LABEL = f"gateway.envoyproxy.io/owning-gateway-name={_GATEWAY_NAME}"
+
+
 def _envoy_service() -> str:
     """Return the Envoy proxy Service name that fronts our Gateway."""
     res = _kubectl(
-        "get", "svc", "-n", "envoy-gateway-system",
-        "-l", f"gateway.envoyproxy.io/owning-gateway-name={_GATEWAY_NAME}",
+        "get", "svc", "-n", "envoy-gateway-system", "-l", _OWNER_LABEL,
         "-o", "jsonpath={.items[0].metadata.name}",
     )
     assert res.returncode == 0 and res.stdout.strip(), (
         f"could not find Envoy proxy service: {res.stderr}"
     )
     return res.stdout.strip()
+
+
+def _wait_for_envoy_deploy(timeout: float = 300) -> str:
+    """Wait for the Envoy proxy Deployment fronting our Gateway; return its name."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        res = _kubectl(
+            "get", "deploy", "-n", "envoy-gateway-system", "-l", _OWNER_LABEL,
+            "-o", "jsonpath={.items[*].metadata.name}",
+        )
+        names = res.stdout.split()
+        if names:
+            return names[0]
+        time.sleep(3)
+    raise AssertionError("Envoy proxy Deployment was not created for the Gateway")
 
 
 def _sample(n: int) -> Counter[str]:
@@ -166,10 +183,17 @@ def test_route_split_and_cutover() -> None:
             f"deploy/{_MODEL}-v1", f"deploy/{_MODEL}-v2",
             "-n", _NS, "--timeout=180s",
         ).returncode == 0
+        # On kind there is no LoadBalancer, so the Gateway's top-level Programmed
+        # condition stays False (AddressNotAssigned) even though the data plane is
+        # configured. Wait on the Envoy proxy Deployment instead; port-forward
+        # reaches it directly regardless of the (absent) external address.
+        proxy_deploy = _wait_for_envoy_deploy()
         assert _kubectl(
-            "wait", "--for=condition=Programmed", f"gateway/{_GATEWAY_NAME}",
-            "-n", _NS, "--timeout=300s",
-        ).returncode == 0, _kubectl("describe", "gateway", _GATEWAY_NAME, "-n", _NS).stdout
+            "wait", "--for=condition=Available", f"deploy/{proxy_deploy}",
+            "-n", "envoy-gateway-system", "--timeout=300s",
+        ).returncode == 0, _kubectl(
+            "describe", "deploy", proxy_deploy, "-n", "envoy-gateway-system"
+        ).stdout
 
         # Baseline (100% v1), then a 50/50 canary.
         _flint_route("--to", "v1")
