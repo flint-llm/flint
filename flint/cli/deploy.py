@@ -40,6 +40,7 @@ _DEFAULT_NAMESPACE = "flint"
 @click.option("--memory-limit", default=None, help="Memory limit (e.g. 4Gi).")
 @click.option("--service-port", default=None, type=int, help="Container/service target port (default: the runtime's port).")
 @click.option("--weights-volume-size", default="50Gi", show_default=True, help="Size of the weights PVC (HF-Hub only).")
+@click.option("--weights-access-mode", default="ReadWriteOnce", show_default=True, help="PVC access mode (ReadWriteMany for multi-replica on a supporting StorageClass).")
 @click.option("--wait/--no-wait", default=True, show_default=True, help="Wait for the rollout to complete.")
 @click.option("--wait-timeout", default=600, show_default=True, type=int, help="Rollout wait timeout in seconds.")
 @click.option("--dry-run", is_flag=True, default=False, help="Print the rendered manifests without applying.")
@@ -64,6 +65,7 @@ def deploy(
     memory_limit: str | None,
     service_port: int | None,
     weights_volume_size: str,
+    weights_access_mode: str,
     wait: bool,
     wait_timeout: int,
     dry_run: bool,
@@ -115,6 +117,7 @@ def deploy(
             hf_token_secret=hf_token_secret,
             service_port=service_port,
             weights_volume_size=weights_volume_size,
+            weights_access_mode=weights_access_mode,
         )
 
         templates_path = Path(resolved_templates) if resolved_templates else None

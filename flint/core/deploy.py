@@ -54,6 +54,7 @@ def build_render_context(
     hf_token_secret: str | None = None,
     service_port: int | None = None,
     weights_volume_size: str = "50Gi",
+    weights_access_mode: str = "ReadWriteOnce",
 ) -> RenderContext:
     """Assemble a :class:`RenderContext` from a model ref and overrides.
 
@@ -63,10 +64,17 @@ def build_render_context(
     weights (``model.hf_repo``) flow through so the deployment template mounts
     the weights PVC.
 
+    The readiness probe's port is forced to the resolved service port: the
+    server listens on one port, so the probe must target it (avoids a probe
+    that polls a closed port when the port is overridden).
+
     Raises:
         UnsupportedRuntimeError: If *runtime* has no registered adapter.
     """
     adapter = get_adapter(runtime)
+    port = service_port if service_port is not None else adapter.default_service_port()
+    readiness = readiness_probe or adapter.default_readiness_probe()
+    readiness = readiness.model_copy(update={"port": port})
     return RenderContext(
         model_name=model.name,
         model_version=model.version,
@@ -75,13 +83,12 @@ def build_render_context(
         image=model.image or adapter.default_image(),
         replicas=replicas,
         resources=resources or adapter.default_resources(),
-        readiness_probe=readiness_probe or adapter.default_readiness_probe(),
+        readiness_probe=readiness,
         hf_repo=model.hf_repo,
         hf_token_secret=hf_token_secret,
-        service_port=service_port
-        if service_port is not None
-        else adapter.default_service_port(),
+        service_port=port,
         weights_volume_size=weights_volume_size,
+        weights_access_mode=weights_access_mode,
     )
 
 

@@ -268,3 +268,36 @@ def test_list_and_delete_lifecycle() -> None:
         assert _kubectl("get", "deploy", _OPS_NAME, "-n", _OPS_NS).returncode == 0
     finally:
         _kubectl("delete", "namespace", _OPS_NS, "--ignore-not-found", "--wait=false")
+
+
+# -- vLLM weights PVC binds (regression for L3; no GPU needed) -----------------
+
+_PVC_NS = "flint-pvc-e2e"
+_PVC_MODEL = "pvcdemo"
+
+
+@pytest.mark.skipif(not _E2E_ENABLED, reason="FLINT_E2E_KIND=1 not set")
+def test_vllm_weights_pvc_binds() -> None:
+    """The default (ReadWriteOnce) weights PVC binds on kind's local-path.
+
+    Regression for the ReadWriteMany bug: RWM would leave the PVC Pending.
+    Uses a stub image + --no-wait; the pod scheduling is enough to bind the
+    (WaitForFirstConsumer) PVC.
+    """
+    try:
+        deploy = _run(
+            "flint", "deploy", _PVC_MODEL,
+            "--runtime", "vllm", "--image", "nginx:stable",
+            "--hf-repo", "org/tiny", "--gpu", "0",
+            "--namespace", _PVC_NS, "--no-wait",
+        )
+        assert deploy.returncode == 0, deploy.stderr
+        bound = _kubectl(
+            "wait", "--for=jsonpath={.status.phase}=Bound",
+            f"pvc/{_PVC_MODEL}-weights", "-n", _PVC_NS, "--timeout=120s",
+        )
+        assert bound.returncode == 0, _kubectl(
+            "describe", "pvc", f"{_PVC_MODEL}-weights", "-n", _PVC_NS
+        ).stdout
+    finally:
+        _kubectl("delete", "namespace", _PVC_NS, "--ignore-not-found", "--wait=false")
