@@ -98,3 +98,30 @@ jobs:
         # Real vLLM inference needs a GPU (no CPU image exists), so it is a
         # manually-run gated test: FLINT_E2E_GPU=1 pytest tests/integration/test_deploy_gpu.py
         run: FLINT_E2E_KIND=1 pytest tests/integration/test_deploy_kind.py -v
+
+  route-kind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flint
+        run: pip install -e ".[dev]"
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: flint-route
+
+      - name: Install Envoy Gateway
+        # Bundles the Gateway API CRDs + the controller into envoy-gateway-system.
+        run: |
+          kubectl apply --server-side -f https://github.com/envoyproxy/gateway/releases/download/v1.8.2/install.yaml
+          kubectl wait --timeout=300s -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
+
+      - name: Run routing E2E test
+        run: FLINT_E2E_ROUTE=1 pytest tests/integration/test_route_kind.py -v
