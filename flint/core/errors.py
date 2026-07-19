@@ -42,6 +42,10 @@ class ConfigError(FlintError):
     """Raised when flint.toml cannot be read or contains invalid values."""
 
 
+class UnsupportedRuntimeError(FlintError):
+    """Raised when a runtime has no registered adapter."""
+
+
 class OllamaError(FlintError):
     """Raised when a local Ollama operation fails."""
 

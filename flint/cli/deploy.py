@@ -38,7 +38,7 @@ _DEFAULT_NAMESPACE = "flint"
 @click.option("--cpu-limit", default=None, help="CPU limit (e.g. 2000m).")
 @click.option("--memory-request", default=None, help="Memory request (e.g. 1Gi).")
 @click.option("--memory-limit", default=None, help="Memory limit (e.g. 4Gi).")
-@click.option("--service-port", default=8080, show_default=True, type=int, help="Container/service target port.")
+@click.option("--service-port", default=None, type=int, help="Container/service target port (default: the runtime's port).")
 @click.option("--weights-volume-size", default="50Gi", show_default=True, help="Size of the weights PVC (HF-Hub only).")
 @click.option("--wait/--no-wait", default=True, show_default=True, help="Wait for the rollout to complete.")
 @click.option("--wait-timeout", default=600, show_default=True, type=int, help="Rollout wait timeout in seconds.")
@@ -62,7 +62,7 @@ def deploy(
     cpu_limit: str | None,
     memory_request: str | None,
     memory_limit: str | None,
-    service_port: int,
+    service_port: int | None,
     weights_volume_size: str,
     wait: bool,
     wait_timeout: int,

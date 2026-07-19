@@ -9,7 +9,6 @@ to all modules under flint/core/.
 
 from flint.core.build import pull_image as pull_image
 from flint.core.build import push_image as push_image
-from flint.core.build import resolve_runtime_image as resolve_runtime_image
 from flint.core.cluster import ensure_namespace as ensure_namespace
 from flint.core.cluster import get_all_endpoints as get_all_endpoints
 from flint.core.cluster import get_model_endpoint as get_model_endpoint
