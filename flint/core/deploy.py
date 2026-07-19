@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from flint.core.build import resolve_runtime_image
@@ -70,38 +71,23 @@ def build_render_context(
     )
 
 
-def deploy_model(
+def render_manifests(
     context: RenderContext,
     *,
     output_dir: Path | None = None,
     templates_dir: Path | None = None,
-    wait: bool = False,
-    wait_timeout_s: int = 600,
-) -> DeployResult:
-    """Render, apply, and report the endpoint for *context*.
+) -> list[Path]:
+    """Render the manifest set for *context* into apply order (no cluster calls).
 
-    Steps: ensure namespace -> render manifests -> apply them in dependency
-    order (PVC, Deployment, Service, HPA), skipping the PVC unless HF-Hub
-    weights are used -> optionally wait for rollout -> compute the in-cluster
-    endpoint.
-
-    Args:
-        context: The validated render context.
-        output_dir: Where to write rendered manifests. A temp dir is used
-            when omitted (kept after the call so the applied YAML can be
-            inspected).
-        templates_dir: Override the built-in templates directory.
-        wait: If True, block until the Deployment finishes rolling out.
-        wait_timeout_s: Rollout timeout when *wait* is True.
+    This is the pure, offline half of a deploy — used both by
+    :func:`deploy_model` and by ``flint deploy --dry-run``. Returns the
+    rendered manifest paths ordered as they would be applied (PVC before
+    Deployment, etc.), with the PVC dropped unless HF-Hub weights are used.
 
     Raises:
-        ClusterError: If the namespace cannot be created.
         TemplateRenderError: If a manifest fails to render, or the runtime has
             no deployable manifests.
-        K8sError: If an apply or the rollout wait fails.
     """
-    ensure_namespace(context.namespace)
-
     if output_dir is None:
         output_dir = Path(tempfile.mkdtemp(prefix="flint-deploy-"))
     logger.debug("Rendering manifests into %s", output_dir)
@@ -114,15 +100,57 @@ def deploy_model(
             f"No manifests were rendered for runtime {context.runtime!r}. "
             "Is it a supported deploy runtime (e.g. 'vllm')?"
         )
-    ordered = _order_manifests(rendered, include_pvc=context.hf_repo is not None)
+    return _order_manifests(rendered, include_pvc=context.hf_repo is not None)
 
+
+def deploy_model(
+    context: RenderContext,
+    *,
+    output_dir: Path | None = None,
+    templates_dir: Path | None = None,
+    wait: bool = False,
+    wait_timeout_s: int = 600,
+    on_progress: Callable[[str], None] | None = None,
+) -> DeployResult:
+    """Render, apply, and report the endpoint for *context*.
+
+    Steps: render manifests -> ensure namespace -> apply them in dependency
+    order (PVC, Deployment, Service, HPA), skipping the PVC unless HF-Hub
+    weights are used -> optionally wait for rollout -> compute the in-cluster
+    endpoint. Rendering happens first so template errors fail fast before any
+    cluster mutation.
+
+    Args:
+        context: The validated render context.
+        output_dir: Where to write rendered manifests. A temp dir is used
+            when omitted (kept after the call so the applied YAML can be
+            inspected).
+        templates_dir: Override the built-in templates directory.
+        wait: If True, block until the Deployment finishes rolling out.
+        wait_timeout_s: Rollout timeout when *wait* is True.
+        on_progress: Optional callback invoked with a short status string each
+            rollout poll (only used when *wait* is True).
+
+    Raises:
+        ClusterError: If the namespace cannot be created.
+        TemplateRenderError: If a manifest fails to render, or the runtime has
+            no deployable manifests.
+        K8sError: If an apply or the rollout wait fails.
+    """
+    ordered = render_manifests(
+        context, output_dir=output_dir, templates_dir=templates_dir
+    )
+
+    ensure_namespace(context.namespace)
     for manifest in ordered:
         kube_apply(manifest, context.namespace)
 
     name = f"{context.model_name}-{context.model_version}"
     ready = False
     if wait:
-        wait_for_rollout(name, context.namespace, timeout_s=wait_timeout_s)
+        wait_for_rollout(
+            name, context.namespace, timeout_s=wait_timeout_s, on_progress=on_progress
+        )
         ready = True
 
     return DeployResult(

@@ -116,11 +116,42 @@ def test_deploy_missing_model_errors() -> None:
 # -- wait + errors ------------------------------------------------------------
 
 
-def test_deploy_wait_flag_forwarded_and_reported() -> None:
+def test_deploy_waits_by_default() -> None:
     with patch("flint.cli.deploy.deploy_model", return_value=_result(ready=True)) as mock_deploy:
-        result = CliRunner().invoke(cli, ["deploy", "m", "--wait"])
+        result = CliRunner().invoke(cli, ["deploy", "m"])
+    assert result.exit_code == 0, result.output
     assert mock_deploy.call_args.kwargs["wait"] is True
-    assert "ready" in result.output
+
+
+def test_deploy_no_wait_flag() -> None:
+    with patch("flint.cli.deploy.deploy_model", return_value=_result()) as mock_deploy:
+        result = CliRunner().invoke(cli, ["deploy", "m", "--no-wait"])
+    assert mock_deploy.call_args.kwargs["wait"] is False
+    assert "not awaited" in result.output
+
+
+def test_deploy_wait_timeout_forwarded() -> None:
+    with patch("flint.cli.deploy.deploy_model", return_value=_result(ready=True)) as mock_deploy:
+        CliRunner().invoke(cli, ["deploy", "m", "--wait-timeout", "120"])
+    assert mock_deploy.call_args.kwargs["wait_timeout_s"] == 120
+
+
+def test_deploy_dry_run_prints_yaml_without_applying(tmp_path: Path) -> None:
+    m1 = tmp_path / "m-latest-deployment.yaml"
+    m1.write_text("kind: Deployment\n", encoding="utf-8")
+    m2 = tmp_path / "m-latest-service.yaml"
+    m2.write_text("kind: Service\n", encoding="utf-8")
+    with (
+        patch("flint.cli.deploy.render_manifests", return_value=[m1, m2]) as mock_render,
+        patch("flint.cli.deploy.deploy_model") as mock_deploy,
+    ):
+        result = CliRunner().invoke(cli, ["deploy", "m", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "kind: Deployment" in result.output
+    assert "kind: Service" in result.output
+    assert "---" in result.output
+    mock_render.assert_called_once()
+    mock_deploy.assert_not_called()
 
 
 def test_deploy_flint_error_no_traceback() -> None:

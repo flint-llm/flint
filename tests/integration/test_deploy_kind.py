@@ -69,6 +69,24 @@ def test_deploy_creates_objects_and_status_finds_them() -> None:
         status = _run("flint", "status", _MODEL, "--namespace", _NAMESPACE)
         assert status.returncode == 0, status.stderr
         assert f"{_MODEL}:latest" in status.stdout
+
+        # Idempotency: an identical re-deploy must not churn the Deployment.
+        # Server-side apply with no field changes leaves the spec untouched, so
+        # metadata.generation stays put (it only bumps on spec changes).
+        gen1 = _kubectl(
+            "get", "deploy", _NAME, "-n", _NAMESPACE,
+            "-o", "jsonpath={.metadata.generation}",
+        ).stdout
+        redeploy = _run(
+            "flint", "deploy", _MODEL, "--image", "nginx:stable",
+            "--gpu", "0", "--namespace", _NAMESPACE, "--no-wait",
+        )
+        assert redeploy.returncode == 0, redeploy.stderr
+        gen2 = _kubectl(
+            "get", "deploy", _NAME, "-n", _NAMESPACE,
+            "-o", "jsonpath={.metadata.generation}",
+        ).stdout
+        assert gen1 and gen1 == gen2, f"deploy not idempotent: gen {gen1!r} -> {gen2!r}"
     finally:
         _kubectl(
             "delete", "namespace", _NAMESPACE, "--ignore-not-found", "--wait=false"

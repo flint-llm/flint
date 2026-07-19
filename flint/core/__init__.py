@@ -20,6 +20,7 @@ from flint.core.cluster import list_deployments as list_deployments
 from flint.core.cluster import list_nodes as list_nodes
 from flint.core.deploy import build_render_context as build_render_context
 from flint.core.deploy import deploy_model as deploy_model
+from flint.core.deploy import render_manifests as render_manifests
 from flint.core.errors import BuildError as BuildError
 from flint.core.errors import ClusterError as ClusterError
 from flint.core.errors import ConfigError as ConfigError
