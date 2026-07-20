@@ -38,6 +38,16 @@ def test_normalize_converts_to_str() -> None:
     assert normalize_model_name("1") == "1"
 
 
+def test_normalize_rejects_non_dns1123() -> None:
+    with pytest.raises(ValueError, match="DNS-1123"):
+        normalize_model_name("My_Model.7B")
+
+
+def test_normalize_rejects_empty() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        normalize_model_name("  ")
+
+
 # -- validate_traffic_weights -------------------------------------------------
 
 
@@ -95,8 +105,8 @@ def test_decode_base64_bytes() -> None:
 
 
 def test_model_ref_normalises_name() -> None:
-    ref = ModelRef(name="Llama-3.2", version="V1")
-    assert ref.name == "llama-3.2"
+    ref = ModelRef(name="Llama-3", version="V1")
+    assert ref.name == "llama-3"
     assert ref.version == "v1"
 
 

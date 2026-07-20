@@ -97,13 +97,15 @@ def render_manifests(
     *,
     output_dir: Path | None = None,
     templates_dir: Path | None = None,
+    include_hpa: bool = True,
 ) -> list[Path]:
     """Render the manifest set for *context* into apply order (no cluster calls).
 
     This is the pure, offline half of a deploy — used both by
     :func:`deploy_model` and by ``flint deploy --dry-run``. Returns the
     rendered manifest paths ordered as they would be applied (PVC before
-    Deployment, etc.), with the PVC dropped unless HF-Hub weights are used.
+    Deployment, etc.), with the PVC dropped unless HF-Hub weights are used and
+    the HPA dropped unless *include_hpa*.
 
     Raises:
         TemplateRenderError: If a manifest fails to render, or the runtime has
@@ -125,7 +127,11 @@ def render_manifests(
             f"No manifests were rendered for runtime {context.runtime!r} "
             f"(templates: {adapter.template_subdir})."
         )
-    return _order_manifests(rendered, include_pvc=context.hf_repo is not None)
+    return _order_manifests(
+        rendered,
+        include_pvc=context.hf_repo is not None,
+        include_hpa=include_hpa,
+    )
 
 
 def deploy_model(
@@ -135,6 +141,7 @@ def deploy_model(
     templates_dir: Path | None = None,
     wait: bool = False,
     wait_timeout_s: int = 600,
+    enable_hpa: bool = True,
     on_progress: Callable[[str], None] | None = None,
 ) -> DeployResult:
     """Render, apply, and report the endpoint for *context*.
@@ -163,7 +170,10 @@ def deploy_model(
         K8sError: If an apply or the rollout wait fails.
     """
     ordered = render_manifests(
-        context, output_dir=output_dir, templates_dir=templates_dir
+        context,
+        output_dir=output_dir,
+        templates_dir=templates_dir,
+        include_hpa=enable_hpa,
     )
 
     ensure_namespace(context.namespace)
@@ -230,18 +240,21 @@ def delete_model(
 # -- Private helpers ----------------------------------------------------------
 
 
-def _order_manifests(paths: list[Path], *, include_pvc: bool) -> list[Path]:
-    """Sort rendered manifests by apply priority; optionally drop the PVC.
+def _order_manifests(
+    paths: list[Path], *, include_pvc: bool, include_hpa: bool = True
+) -> list[Path]:
+    """Sort rendered manifests by apply priority; optionally drop PVC/HPA.
 
-    ``render_deployment_templates`` always renders a PVC, but it is only
-    mounted when HF-Hub weights are used, so an unused PVC is not applied.
-    Matching is on the filename suffix (``...-<kind>.yaml``) so a model name
-    that happens to contain a resource keyword does not misclassify.
+    ``render_deployment_templates`` always renders a PVC and HPA, but the PVC
+    is only mounted for HF-Hub weights and the HPA is opt-in — an unused one is
+    not applied. Matching is on the filename suffix (``...-<kind>.yaml``) so a
+    model name that happens to contain a resource keyword does not misclassify.
     """
     selected = [
         p
         for p in paths
-        if include_pvc or not p.name.lower().endswith("pvc.yaml")
+        if (include_pvc or not p.name.lower().endswith("pvc.yaml"))
+        and (include_hpa or not p.name.lower().endswith("hpa.yaml"))
     ]
     return sorted(selected, key=_apply_priority)
 

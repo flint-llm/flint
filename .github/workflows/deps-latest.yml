@@ -1,0 +1,31 @@
+name: deps-latest
+
+# Weekly run against the newest compatible dependency versions so drift is
+# caught deliberately, not by users on install day. Also runnable on demand.
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  latest-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install with newest compatible deps
+        run: pip install -U -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        run: mypy flint
+
+      - name: Test
+        run: pytest --ignore=tests/integration

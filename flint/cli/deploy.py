@@ -8,6 +8,7 @@ in-cluster endpoint.
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from flint.cli._errors import handle_flint_error
 from flint.config import load_config
 from flint.core.deploy import build_render_context, deploy_model, render_manifests
 from flint.core.errors import FlintError
-from flint.core.models import ModelRef, ResourceSpec
+from flint.core.models import ModelRef, ResourceSpec, normalize_model_name
 
 _DEFAULT_RUNTIME = "vllm"
 _DEFAULT_NAMESPACE = "flint"
@@ -41,6 +42,7 @@ _DEFAULT_NAMESPACE = "flint"
 @click.option("--service-port", default=None, type=int, help="Container/service target port (default: the runtime's port).")
 @click.option("--weights-volume-size", default="50Gi", show_default=True, help="Size of the weights PVC (HF-Hub only).")
 @click.option("--weights-access-mode", default="ReadWriteOnce", show_default=True, help="PVC access mode (ReadWriteMany for multi-replica on a supporting StorageClass).")
+@click.option("--hpa/--no-hpa", default=False, show_default=True, help="Also create a CPU HorizontalPodAutoscaler (off by default; not useful for GPU-bound inference).")
 @click.option("--wait/--no-wait", default=True, show_default=True, help="Wait for the rollout to complete.")
 @click.option("--wait-timeout", default=600, show_default=True, type=int, help="Rollout wait timeout in seconds.")
 @click.option("--dry-run", is_flag=True, default=False, help="Print the rendered manifests without applying.")
@@ -66,6 +68,7 @@ def deploy(
     service_port: int | None,
     weights_volume_size: str,
     weights_access_mode: str,
+    hpa: bool,
     wait: bool,
     wait_timeout: int,
     dry_run: bool,
@@ -84,6 +87,10 @@ def deploy(
             raise click.UsageError(
                 "No model specified. Pass MODEL or set [defaults].model in flint.toml."
             )
+        # Validate/normalise up front so an invalid name gives a friendly error
+        # rather than a verbose pydantic ValidationError from ModelRef below.
+        model_name = normalize_model_name(model_name)
+        model_version = normalize_model_name(model_version) if model_version else "latest"
 
         resolved_runtime = runtime or config.default_runtime or _DEFAULT_RUNTIME
         resolved_namespace = namespace or _DEFAULT_NAMESPACE
@@ -91,7 +98,7 @@ def deploy(
 
         model_ref = ModelRef(
             name=model_name,
-            version=model_version or "latest",
+            version=model_version,
             image=image,
             hf_repo=hf_repo,
         )
@@ -123,11 +130,17 @@ def deploy(
         templates_path = Path(resolved_templates) if resolved_templates else None
 
         if dry_run:
-            manifests = render_manifests(context, templates_dir=templates_path)
-            for i, manifest in enumerate(manifests):
-                if i:
-                    click.echo("---")
-                click.echo(manifest.read_text(encoding="utf-8").rstrip("\n"))
+            with tempfile.TemporaryDirectory(prefix="flint-dry-run-") as tmp:
+                manifests = render_manifests(
+                    context,
+                    output_dir=Path(tmp),
+                    templates_dir=templates_path,
+                    include_hpa=hpa,
+                )
+                for i, manifest in enumerate(manifests):
+                    if i:
+                        click.echo("---")
+                    click.echo(manifest.read_text(encoding="utf-8").rstrip("\n"))
             return
 
         result = deploy_model(
@@ -135,6 +148,7 @@ def deploy(
             templates_dir=templates_path,
             wait=wait,
             wait_timeout_s=wait_timeout,
+            enable_hpa=hpa,
             on_progress=_progress_reporter() if wait else None,
         )
     except FlintError as exc:

@@ -32,6 +32,7 @@ def test_route_requires_exactly_one_action() -> None:
 def test_route_to_cutover() -> None:
     with (
         patch("flint.cli.route.ensure_gateway_api_available"),
+        patch("flint.cli.route.verify_versions_deployed"),
         patch("flint.cli.route.apply_traffic_split", return_value=_split(v2=100)) as mock_apply,
     ):
         result = CliRunner().invoke(cli, ["route", "llama", "--to", "v2"])
@@ -43,6 +44,7 @@ def test_route_to_cutover() -> None:
 def test_route_canary_reads_current_and_rebalances() -> None:
     with (
         patch("flint.cli.route.ensure_gateway_api_available"),
+        patch("flint.cli.route.verify_versions_deployed"),
         patch("flint.cli.route.get_traffic_split", return_value=_split(v1=100)),
         patch("flint.cli.route.apply_traffic_split", return_value=_split(v1=90, v2=10)) as mock_apply,
     ):
@@ -50,6 +52,24 @@ def test_route_canary_reads_current_and_rebalances() -> None:
     assert result.exit_code == 0, result.output
     weights = mock_apply.call_args.args[1]
     assert weights == {"v1": 90, "v2": 10}
+
+
+def test_route_to_undeployed_version_errors() -> None:
+    from flint.core.errors import RoutingError
+
+    with (
+        patch("flint.cli.route.ensure_gateway_api_available"),
+        patch(
+            "flint.cli.route.verify_versions_deployed",
+            side_effect=RoutingError("Cannot route to undeployed version(s) ['v9']"),
+        ),
+        patch("flint.cli.route.apply_traffic_split") as mock_apply,
+    ):
+        result = CliRunner().invoke(cli, ["route", "llama", "--to", "v9"])
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+    assert "undeployed" in result.output
+    mock_apply.assert_not_called()
 
 
 def test_route_show_prints_split() -> None:

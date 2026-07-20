@@ -125,6 +125,20 @@ def test_deploy_apply_order_with_pvc(tmp_path: Path) -> None:
     ]
 
 
+def test_render_manifests_excludes_hpa_when_disabled(tmp_path: Path) -> None:
+    ctx = RenderContext(
+        model_name="m", model_version="v1", runtime="vllm", image="img",
+        namespace="flint", hf_repo="org/m",
+    )
+    with patch(
+        "flint.core.deploy.render_deployment_templates",
+        return_value=_rendered(tmp_path),
+    ):
+        names = [p.name for p in render_manifests(ctx, output_dir=tmp_path, include_hpa=False)]
+    assert "m-v1-hpa.yaml" not in names
+    assert "m-v1-deployment.yaml" in names
+
+
 # -- deploy_model: wait + result ----------------------------------------------
 
 

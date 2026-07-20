@@ -11,6 +11,7 @@ fields are added or renamed, so callers can detect incompatible contexts.
 from __future__ import annotations
 
 import base64
+import re
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -141,12 +142,29 @@ class DeploymentStatus(BaseModel):
 # ── Utility functions ported from monolith ────────────────────────────────────
 
 
+_DNS1123_LABEL = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+
+
 def normalize_model_name(name: str) -> str:
-    """Normalise a model name or version tag to a lowercase string.
+    """Normalise and validate a model name or version tag.
+
+    Lowercases *name* and checks it is a valid DNS-1123 label, since it flows
+    into Kubernetes resource names and labels. Raises a friendly ValueError
+    rather than letting an invalid name reach (and be rejected by) the API
+    server.
 
     Ported from monolith `_validate_and_prep_model_tag` (lines 324-329).
     """
-    return str(name).lower()
+    normalized = str(name).strip().lower()
+    if not normalized:
+        raise ValueError("Model name/version must not be empty.")
+    if len(normalized) > 63 or not _DNS1123_LABEL.match(normalized):
+        raise ValueError(
+            f"Invalid name {name!r}: must be a DNS-1123 label (lowercase "
+            "letters, digits and '-'; start/end alphanumeric; <= 63 chars), "
+            "e.g. 'my-model-7b'."
+        )
+    return normalized
 
 
 def validate_traffic_weights(weights: dict[str, int]) -> None:

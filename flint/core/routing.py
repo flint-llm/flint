@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from flint.core.cluster import has_gateway_api
+from flint.core.cluster import has_gateway_api, list_deployments
 from flint.core.errors import RoutingError
 from flint.core.k8s_apply import get_resource, kube_apply_manifest
 from flint.core.models import (
@@ -42,6 +42,25 @@ def ensure_gateway_api_available() -> None:
             "CRDs: kubectl apply -f "
             "https://github.com/kubernetes-sigs/gateway-api/releases/latest/"
             "download/standard-install.yaml"
+        )
+
+
+def verify_versions_deployed(
+    model_name: str, namespace: str, versions: list[str]
+) -> None:
+    """Raise RoutingError if any of *versions* has no deployment for the model.
+
+    Guards against routing traffic to a version that was never deployed (e.g.
+    a typo in ``--to``/``--canary``), which would send requests to a backend
+    that does not exist.
+    """
+    deployed = {d.model_version for d in list_deployments(namespace, model_name)}
+    missing = [v for v in versions if v not in deployed]
+    if missing:
+        have = ", ".join(sorted(deployed)) or "none"
+        raise RoutingError(
+            f"Cannot route to undeployed version(s) {sorted(missing)} of "
+            f"{model_name!r} (deployed: {have}). Deploy them first."
         )
 
 

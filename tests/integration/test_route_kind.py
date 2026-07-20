@@ -67,6 +67,11 @@ kind: Deployment
 metadata:
   name: {name}
   namespace: {_NS}
+  labels:
+    app: {_MODEL}
+    flint.dev/managed: "true"
+    flint.dev/model: "{_MODEL}"
+    flint.dev/version: "{version}"
 spec:
   replicas: 1
   selector:
