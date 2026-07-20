@@ -3,12 +3,26 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "flint"
-version = "0.1.0-dev"
+name = "flint-llm"
+version = "0.1.0.dev0"
 description = "Deploy LLMs to Kubernetes."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
+authors = [{ name = "Flint contributors" }]
+keywords = ["llm", "kubernetes", "vllm", "ollama", "tgi", "inference", "deploy"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Systems Administration",
+]
 dependencies = [
     "click>=8.1",
     "httpx>=0.27",
@@ -30,6 +44,11 @@ dev = [
 
 [project.scripts]
 flint = "flint.cli.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/flint-llm/flint"
+Issues = "https://github.com/flint-llm/flint/issues"
+Changelog = "https://github.com/flint-llm/flint/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]

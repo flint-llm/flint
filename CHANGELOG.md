@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0-dev] - Unreleased
 
+### Changed
+- Renamed the PyPI distribution to `flint-llm` (`pip install flint-llm`). The
+  import package and the `flint` CLI command are unchanged.
+
 ### Added
 - CI workflow verified.
 
