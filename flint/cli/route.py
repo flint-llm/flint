@@ -20,6 +20,7 @@ from flint.core.routing import (
     canary_weights,
     ensure_gateway_api_available,
     get_traffic_split,
+    verify_versions_deployed,
 )
 
 _DEFAULT_NAMESPACE = "flint"
@@ -82,6 +83,9 @@ def route(
             pct, target = canary
             current = get_traffic_split(model_name, namespace)
             weights = canary_weights(current, normalize_model_name(target), pct)
+
+        # Don't route traffic to a version that isn't deployed.
+        verify_versions_deployed(model_name, namespace, list(weights))
 
         hostname = host or f"{model_name}.local"
         split = apply_traffic_split(

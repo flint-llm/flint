@@ -15,6 +15,7 @@ from flint.core.routing import (
     ensure_gateway_api_available,
     get_traffic_split,
     validate_shadow_routes,
+    verify_versions_deployed,
 )
 
 
@@ -143,6 +144,26 @@ def test_canary_weights_multiple_baselines_raises() -> None:
 def test_canary_weights_out_of_range_raises() -> None:
     with pytest.raises(RoutingError, match="0-100"):
         canary_weights(_split(v1=100), "v2", 150)
+
+
+# -- verify_versions_deployed -------------------------------------------------
+
+
+def _status(*versions: str) -> list[object]:
+    from types import SimpleNamespace
+
+    return [SimpleNamespace(model_version=v) for v in versions]
+
+
+def test_verify_versions_deployed_ok() -> None:
+    with patch("flint.core.routing.list_deployments", return_value=_status("v1", "v2")):
+        verify_versions_deployed("llama", "flint", ["v1", "v2"])  # no raise
+
+
+def test_verify_versions_deployed_missing_raises() -> None:
+    with patch("flint.core.routing.list_deployments", return_value=_status("v1")):
+        with pytest.raises(RoutingError, match="undeployed"):
+            verify_versions_deployed("llama", "flint", ["v1", "v9"])
 
 
 # -- validate_shadow_routes (retained) ----------------------------------------

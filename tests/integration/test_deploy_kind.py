@@ -50,6 +50,7 @@ def test_deploy_creates_objects_and_status_finds_them() -> None:
             "0",
             "--namespace",
             _NAMESPACE,
+            "--hpa",
             "--no-wait",
         )
         assert deploy.returncode == 0, (
@@ -82,7 +83,7 @@ def test_deploy_creates_objects_and_status_finds_them() -> None:
         ).stdout
         redeploy = _run(
             "flint", "deploy", _MODEL, "--image", "nginx:stable",
-            "--gpu", "0", "--namespace", _NAMESPACE, "--no-wait",
+            "--gpu", "0", "--namespace", _NAMESPACE, "--hpa", "--no-wait",
         )
         assert redeploy.returncode == 0, redeploy.stderr
         gen2 = _kubectl(
@@ -206,6 +207,7 @@ def test_tgi_deploy_creates_objects() -> None:
             "--image", "nginx:stable",
             "--gpu", "0",
             "--namespace", _TGI_NS,
+            "--hpa",
             "--no-wait",
         )
         assert deploy.returncode == 0, (
@@ -236,7 +238,7 @@ def _deploy_ops_stub() -> subprocess.CompletedProcess[str]:
     return _run(
         "flint", "deploy", _OPS_MODEL,
         "--image", "nginx:stable", "--gpu", "0",
-        "--namespace", _OPS_NS, "--no-wait",
+        "--namespace", _OPS_NS, "--hpa", "--no-wait",
     )
 
 

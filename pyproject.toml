@@ -10,12 +10,15 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
 dependencies = [
-    "click>=8.1",
-    "httpx>=0.27",
-    "jinja2>=3.1",
-    "kubernetes>=29.0",
-    "pydantic>=2.0",
-    "pyyaml>=6.0",
+    # Upper bounds cap the next major so a surprise release can't silently
+    # break users on install day; the scheduled deps-latest CI job exercises
+    # the newest compatible versions weekly so drift is caught deliberately.
+    "click>=8.1,<9",
+    "httpx>=0.27,<1",
+    "jinja2>=3.1,<4",
+    "kubernetes>=29.0,<40",
+    "pydantic>=2.0,<3",
+    "pyyaml>=6.0,<7",
 ]
 
 [project.optional-dependencies]

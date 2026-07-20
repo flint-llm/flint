@@ -136,6 +136,18 @@ def test_deploy_wait_timeout_forwarded() -> None:
     assert mock_deploy.call_args.kwargs["wait_timeout_s"] == 120
 
 
+def test_deploy_hpa_off_by_default() -> None:
+    with patch("flint.cli.deploy.deploy_model", return_value=_result(ready=True)) as mock_deploy:
+        CliRunner().invoke(cli, ["deploy", "m"])
+    assert mock_deploy.call_args.kwargs["enable_hpa"] is False
+
+
+def test_deploy_hpa_opt_in() -> None:
+    with patch("flint.cli.deploy.deploy_model", return_value=_result(ready=True)) as mock_deploy:
+        CliRunner().invoke(cli, ["deploy", "m", "--hpa"])
+    assert mock_deploy.call_args.kwargs["enable_hpa"] is True
+
+
 def test_deploy_dry_run_prints_yaml_without_applying(tmp_path: Path) -> None:
     m1 = tmp_path / "m-latest-deployment.yaml"
     m1.write_text("kind: Deployment\n", encoding="utf-8")

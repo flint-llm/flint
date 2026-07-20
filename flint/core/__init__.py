@@ -64,6 +64,7 @@ from flint.core.routing import (
 )
 from flint.core.routing import get_traffic_split as get_traffic_split
 from flint.core.routing import validate_shadow_routes as validate_shadow_routes
+from flint.core.routing import verify_versions_deployed as verify_versions_deployed
 from flint.core.templates import get_templates_dir as get_templates_dir
 from flint.core.templates import (
     render_deployment_templates as render_deployment_templates,

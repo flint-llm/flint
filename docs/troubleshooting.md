@@ -16,6 +16,20 @@ with `--debug` for a full traceback, or `--verbose` for INFO-level logs.
 | 9 | Deploy never becomes ready (`--wait` times out) | Image pull / weight download slow, or no GPU for a GPU runtime | Check `flint logs <model>`; ensure GPU nodes for vllm/tgi; raise `--wait-timeout`. |
 | 10 | `flint route` split not taking effect | Requests not matching the route hostname | Send requests with the route's `Host` header (default `<model>.local`, or `--host`). |
 
+## Runtime behavior notes
+
+- **vLLM** (`--hf-repo`): weights download into the mounted PVC (`HF_HOME=/weights`)
+  and persist across pod restarts. The PVC defaults to `ReadWriteOnce`; use
+  `--weights-access-mode ReadWriteMany` for multi-replica on a StorageClass
+  that supports it.
+- **Ollama**: the model is pulled into an `emptyDir` per pod, so it is
+  re-downloaded whenever a pod is recreated. Fine for small models; expect a
+  cold-start delay after restarts.
+- **TGI**: weights download into an ephemeral `/data` per pod (re-downloaded on
+  restart), and TGI is GPU-oriented (CUDA image).
+- **HPA**: not created by default (CPU-based autoscaling is a poor fit for
+  GPU-bound inference). Opt in with `flint deploy ... --hpa`.
+
 ## Getting more detail
 
 - `--debug` (or `FLINT_DEBUG=1`): print full Python tracebacks on error.
