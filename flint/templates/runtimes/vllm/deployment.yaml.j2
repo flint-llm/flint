@@ -23,25 +23,6 @@ spec:
         flint.dev/model: "{{ model_name }}"
         flint.dev/version: "{{ model_version }}"
     spec:
-{% if hf_repo %}
-      initContainers:
-      - name: weights-prefetch
-        image: huggingface/downloader:latest
-        args:
-          - {{ hf_repo }}
-          - /weights
-        volumeMounts:
-        - name: weights
-          mountPath: /weights
-{% if hf_token_secret %}
-        env:
-        - name: HUGGING_FACE_HUB_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: {{ hf_token_secret }}
-              key: token
-{% endif %}
-{% endif %}
       containers:
       - name: vllm
         image: {{ image }}
@@ -50,6 +31,8 @@ spec:
           - {{ hf_repo or model_name }}
           - --served-model-name
           - {{ model_name }}
+          - --port
+          - "{{ service_port }}"
         ports:
         - containerPort: {{ service_port }}
           name: http
@@ -70,13 +53,21 @@ spec:
 {% if gpu_count > 0 %}
             {{ gpu_type }}: {{ gpu_count }}
 {% endif %}
-{% if hf_token_secret %}
+{% if hf_repo or hf_token_secret %}
         env:
+{% if hf_repo %}
+        # vLLM downloads {{ hf_repo }} into this cache, backed by the weights PVC
+        # so it persists across pod restarts.
+        - name: HF_HOME
+          value: /weights
+{% endif %}
+{% if hf_token_secret %}
         - name: HUGGING_FACE_HUB_TOKEN
           valueFrom:
             secretKeyRef:
               name: {{ hf_token_secret }}
               key: token
+{% endif %}
 {% endif %}
 {% if hf_repo %}
         volumeMounts:

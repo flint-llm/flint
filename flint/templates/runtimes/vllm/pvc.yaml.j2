@@ -8,7 +8,7 @@ metadata:
     flint.dev/model: "{{ model_name }}"
 spec:
   accessModes:
-    - ReadWriteMany
+    - {{ weights_access_mode }}
   resources:
     requests:
       storage: {{ weights_volume_size }}

@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from flint.core.errors import WeightsValidationError
 
-SCHEMA_VERSION: int = 2
+SCHEMA_VERSION: int = 3
 
 
 class WeightsStrategy(StrEnum):
@@ -85,6 +85,10 @@ class RenderContext(BaseModel):
     hf_token_secret: str | None = None
     service_port: int = Field(default=8080, gt=0, lt=65536)
     weights_volume_size: str = "50Gi"
+    # RWO works with every default StorageClass (kind local-path, EBS, GCE PD)
+    # for the single-replica default. Use ReadWriteMany for multi-replica on a
+    # cluster whose StorageClass supports it.
+    weights_access_mode: str = "ReadWriteOnce"
     labels: dict[str, str] = Field(default_factory=dict)
     extra: dict[str, Any] = Field(default_factory=dict)
 

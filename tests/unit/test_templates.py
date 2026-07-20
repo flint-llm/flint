@@ -130,6 +130,54 @@ def test_render_ollama_deployment() -> None:
     assert "initContainers" in rendered
 
 
+def test_vllm_manifest_ports_are_aligned() -> None:
+    # Regression for L1: vLLM must listen on the service port (--port), and the
+    # containerPort, readiness probe, and Service targetPort must all match it.
+    from flint.core.deploy import build_render_context
+    from flint.core.models import ModelRef
+
+    ctx = build_render_context(
+        ModelRef(name="m", version="v1"), "vllm", "flint", service_port=9000
+    )
+    dep = render_template("runtimes/vllm/deployment.yaml.j2", ctx)
+    svc = render_template("runtimes/vllm/service.yaml.j2", ctx)
+    assert "--port" in dep
+    assert '"9000"' in dep  # the --port arg value
+    assert "containerPort: 9000" in dep
+    assert "port: 9000" in dep  # readiness probe port
+    assert "targetPort: 9000" in svc
+
+
+def test_vllm_hf_weights_use_pvc_not_broken_init() -> None:
+    # Regression for L2: no weights-prefetch init container; vLLM caches into
+    # the PVC via HF_HOME instead.
+    from flint.core.deploy import build_render_context
+    from flint.core.models import ModelRef
+
+    ctx = build_render_context(
+        ModelRef(name="m", version="v1", hf_repo="org/m"), "vllm", "flint"
+    )
+    dep = render_template("runtimes/vllm/deployment.yaml.j2", ctx)
+    assert "huggingface/downloader" not in dep
+    assert "initContainers" not in dep
+    assert "HF_HOME" in dep
+    assert "/weights" in dep
+
+
+def test_vllm_pvc_defaults_to_read_write_once() -> None:
+    # Regression for L3: default PVC access mode is RWO (works on kind/EBS/GCE).
+    rendered = render_template("runtimes/vllm/pvc.yaml.j2", _ctx())
+    assert "ReadWriteOnce" in rendered
+    assert "ReadWriteMany" not in rendered
+
+
+def test_vllm_pvc_access_mode_override() -> None:
+    rendered = render_template(
+        "runtimes/vllm/pvc.yaml.j2", _ctx(weights_access_mode="ReadWriteMany")
+    )
+    assert "ReadWriteMany" in rendered
+
+
 def test_render_tgi_deployment() -> None:
     ctx = _ctx(runtime="tgi", hf_repo="facebook/opt-125m")
     rendered = render_template("runtimes/tgi/deployment.yaml.j2", ctx)
