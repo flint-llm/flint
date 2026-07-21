@@ -72,10 +72,13 @@ Run `flint <command> --help` for options. Add `--debug` for full tracebacks,
 
 ## Docs
 
+**[flint-llm.github.io/flint](https://flint-llm.github.io/flint/)** — quickstarts
+(local + cluster), runtime comparison, traffic-routing guide, full CLI reference.
+
+- [Local quickstart](https://flint-llm.github.io/flint/quickstart-local/) — 3 minutes, no cluster
+- [Kubernetes quickstart](https://flint-llm.github.io/flint/quickstart-cluster/) — 10 minutes
 - [Troubleshooting](docs/troubleshooting.md) — common errors and fixes
 - [CHANGELOG](CHANGELOG.md) — what's in each release
-
-_(A full documentation site is on the way.)_
 
 ## License
 

@@ -28,7 +28,15 @@ class FlintGroup(click.Group):
     def invoke(self, ctx: click.Context) -> object:
         try:
             return super().invoke(ctx)
-        except (click.ClickException, click.exceptions.Abort, SystemExit):
+        except (
+            click.ClickException,
+            click.exceptions.Abort,
+            # click.exceptions.Exit subclasses RuntimeError, so it must be
+            # re-raised explicitly or `--help` on a subcommand (which exits
+            # this way) would be reported as "Error: 0".
+            click.exceptions.Exit,
+            SystemExit,
+        ):
             raise  # usage errors / aborts / already-handled exits
         except Exception as exc:
             debug = bool((ctx.obj or {}).get("debug"))
