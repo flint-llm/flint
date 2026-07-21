@@ -1,0 +1,83 @@
+site_name: Flint
+site_description: >-
+  Deploy and serve large language models on your own Kubernetes cluster — or on
+  your laptop — behind a single OpenAI-compatible endpoint.
+site_url: https://flint-llm.github.io/flint/
+repo_url: https://github.com/flint-llm/flint
+repo_name: flint-llm/flint
+edit_uri: edit/main/docs/
+copyright: Apache-2.0
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Quickstart:
+      - Local (3 minutes): quickstart-local.md
+      - Kubernetes (10 minutes): quickstart-cluster.md
+  - Guides:
+      - Runtimes: runtimes.md
+      - Traffic routing: routing.md
+      - Configuration: configuration.md
+  - Reference:
+      - CLI: cli.md
+      - Troubleshooting: troubleshooting.md
+      - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.keys
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - mkdocs-click
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/flint-llm/flint
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/flint-llm/
+
+# Fail the build on a bad internal link rather than shipping a dead docs site.
+validation:
+  links:
+    absolute_links: relative_to_docs
+    unrecognized_links: warn

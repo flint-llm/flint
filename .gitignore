@@ -23,3 +23,6 @@ Thumbs.db
 
 # Internal planning docs (kept local, not published)
 build_docs/
+
+# MkDocs build output
+site/

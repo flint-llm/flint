@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 
 from flint.cli.main import cli
@@ -23,3 +24,16 @@ def test_help_lists_all_commands() -> None:
     out = CliRunner().invoke(cli, ["--help"]).output
     for cmd in ("deploy", "status", "route", "list", "delete", "logs", "serve"):
         assert cmd in out
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["deploy", "status", "list", "logs", "delete", "route", "serve", "init", "version"],
+)
+def test_subcommand_help_exits_cleanly(command: str) -> None:
+    # click.exceptions.Exit subclasses RuntimeError; if FlintGroup swallowed it,
+    # `flint <cmd> --help` would print "Error: 0" and exit 1.
+    result = CliRunner().invoke(cli, [command, "--help"])
+    assert result.exit_code == 0
+    assert "Error" not in result.output
+    assert f"Usage: cli {command}" in result.output
