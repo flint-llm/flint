@@ -1,10 +1,11 @@
-# Flint — Claude Code Guide
+# Flint — development guide
 
 ## Project overview
 
 Flint is a Python CLI that deploys LLMs to Kubernetes and routes traffic between versions. No Flint server; the CLI uses the user's kubeconfig and does all orchestration client-side.
 
-See `../FLINT_ARCHITECTURE.md` and `../FLINT_BUILD_PLAN.md` for full context.
+See `build_docs/FLINT_ARCHITECTURE.md` and `build_docs/FLINT_BUILD_PLAN.md`
+(kept local, not published) for full context.
 
 ## Repository layout
 
@@ -28,9 +29,9 @@ flint/                        Python package root (also the git repo root)
 │   │   ├── build.py          Image pull/push
 │   │   └── runtimes/
 │   │       └── ollama_local.py  Local Ollama subprocess wrapper
-│   ├── runtimes/             K8s runtime adapters (empty until S4)
+│   ├── runtimes/             K8s runtime adapters (base + vllm/ollama/tgi)
 │   ├── k8s/                  (empty, reserved)
-│   ├── config/               (empty, reserved)
+│   ├── config/               flint.toml loader
 │   └── templates/            Jinja2 templates shipped with package
 │       └── vllm/             vLLM deployment/service/hpa/pvc templates
 ├── tests/
@@ -61,8 +62,6 @@ pytest --cov=flint/core --cov-report=term-missing   # with coverage
 
 - **No Docker image builds** in v0.1. `build.py` only does pull/push.
 - **No Flint server** — CLI only; uses user's kubeconfig.
-- **CLI modules stay empty until S2**. Don't add logic to `flint/cli/`.
-- **Runtime adapters empty until S4**. Don't add to `flint/runtimes/`.
 - **No imports from `_salvage/`** from any `flint/` module.
 
 ## Code standards
@@ -82,12 +81,15 @@ pytest --cov=flint/core --cov-report=term-missing   # with coverage
 | S1 | Complete | Monolith decomposed into 8 typed modules; CONVENTIONS.md + MONOLITH_MAP.md added |
 | S2 | Complete | `flint version`, `flint init`, `flint serve` (local Ollama mode) |
 | S3 | Complete | `flint deploy` + `flint status` (vLLM on Kubernetes); writes via Python-client server-side apply |
-| S4-S7 | Not started | See FLINT_BUILD_PLAN.md |
+| S4 | Complete | `RuntimeAdapter` + vllm/ollama/tgi adapters; `flint deploy --runtime` |
+| S5 | Complete | `flint route` (Gateway API HTTPRoute): `--to`, `--canary`, `--show` |
+| S6 | Complete | `flint list`, `flint delete`, `flint logs`; error-handling pass |
+| S7 | In progress | 0.1.0 on PyPI, docs site live, examples/ done; announce remains |
 
-## Running S2 commands
+## Running the CLI
 
 ```bash
-flint --help                          # lists version, init, serve
+flint --help                          # lists all commands
 flint version                         # prints installed version
 flint init                            # scaffolds flint.toml in current dir
 flint init --force                    # overwrites existing flint.toml
@@ -104,5 +106,4 @@ FLINT_E2E_OLLAMA=1 pytest tests/integration/test_serve_local.py -v
 
 | Location | TODO |
 |----------|------|
-| `cluster.py` | TODO(S5): Replace Ingress/Istio lookups with Gateway API HTTPRoute |
-| `routing.py` | TODO(S5): Render HTTPRoute instead of Istio RouteRules |
+| `cluster.py` | TODO(S5): Replace remaining Ingress/Istio lookups with Gateway API (3 sites) |
