@@ -125,3 +125,42 @@ jobs:
 
       - name: Run routing E2E test
         run: FLINT_E2E_ROUTE=1 pytest tests/integration/test_route_kind.py -v
+
+  examples-lint:
+    # Cheap guard on examples/: the scripts are user-facing, and a typo in one
+    # is only discovered by someone following the docs. Full cluster runs of
+    # the examples are covered by deploy-kind/route-kind's equivalent flows.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flint
+        run: pip install -e ".[dev]"
+
+      - name: Shellcheck the example scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning examples/*/run.sh
+
+      - name: Every run.sh is executable and parses
+        run: |
+          for f in examples/*/run.sh; do
+            test -x "$f" || { echo "$f is not executable"; exit 1; }
+            bash -n "$f"
+          done
+
+      - name: The deploy commands the examples use still render
+        run: |
+          flint deploy tinyllama --runtime ollama -n ex --dry-run > /dev/null
+          flint deploy tinyllama --runtime ollama --version v1 -n ex --dry-run > /dev/null
+          flint deploy mistral --runtime vllm --hf-repo org/repo --gpu 1 -n ex \
+            --weights-volume-size 50Gi --memory-request 16Gi --memory-limit 32Gi \
+            --hf-token-secret hf-token --dry-run > /dev/null
+
+      - name: Example manifests are valid YAML
+        run: python -c "import yaml,sys; list(yaml.safe_load_all(open('examples/03-canary-rollout/gateway.yaml')))"

@@ -33,6 +33,9 @@ Python 3.12 or newer.
   how they differ.
 - **[Traffic routing](routing.md)** — run two versions side by side and shift
   traffic between them with the Gateway API.
+- **[Worked examples](https://github.com/flint-llm/flint/tree/main/examples)** —
+  three runnable end-to-end scripts: a CPU model, a GPU model, and a canary
+  rollout you can watch shift traffic.
 
 </div>
 
