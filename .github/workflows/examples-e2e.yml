@@ -1,0 +1,99 @@
+name: Examples E2E
+
+# Runs the examples exactly as a user would — `./run.sh` from inside the example
+# directory, no reimplementation — against a real kind cluster. This is the
+# evidence for S7 exit criterion 6 ("the examples are reproducible from the
+# directory").
+#
+# Triggered manually, and automatically when examples/ changes, so it costs
+# nothing on unrelated PRs.
+#
+# 02-gpu-model is deliberately absent: it needs real GPU nodes, which hosted
+# runners do not have. It stays in the same bucket as the gated FLINT_E2E_GPU
+# tests — verified by hand on GPU hardware.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "examples/**"
+      - ".github/workflows/examples-e2e.yml"
+
+jobs:
+  example-01-cpu:
+    name: "01 — small model on CPU"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flint
+        run: pip install -e .
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: flint-ex01
+
+      - name: Run examples/01-cpu-model/run.sh
+        working-directory: examples/01-cpu-model
+        run: ./run.sh
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get all -n flint-example-01 || true
+          kubectl describe pods -n flint-example-01 || true
+          kubectl logs -n flint-example-01 -l flint.dev/managed=true --tail=100 || true
+
+      - name: Cleanup path also works
+        if: always()
+        working-directory: examples/01-cpu-model
+        run: ./run.sh cleanup
+
+  example-03-canary:
+    name: "03 — canary rollout"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flint
+        run: pip install -e .
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: flint-ex03
+
+      # INSTALL_GATEWAY=1 is the opt-in the script requires before it will
+      # install a gateway controller into a cluster.
+      - name: Run examples/03-canary-rollout/run.sh
+        working-directory: examples/03-canary-rollout
+        env:
+          INSTALL_GATEWAY: "1"
+        run: ./run.sh
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get all -n flint-example-03 || true
+          kubectl get gateway,httproute -n flint-example-03 -o yaml || true
+          kubectl describe pods -n flint-example-03 || true
+          kubectl logs -n flint-example-03 -l flint.dev/managed=true --tail=100 || true
+          kubectl get all -n envoy-gateway-system || true
+
+      - name: Cleanup path also works
+        if: always()
+        working-directory: examples/03-canary-rollout
+        run: ./run.sh cleanup

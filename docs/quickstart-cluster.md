@@ -113,6 +113,12 @@ flint delete mistral --keep-weights
 `delete` prompts before removing anything; `--yes` skips the prompt. It is
 idempotent — deleting what is already gone is not an error.
 
+## Next
+
+- [Worked examples](https://github.com/flint-llm/flint/tree/main/examples) —
+  runnable scripts for a CPU model, a GPU model, and a canary rollout
+- [Traffic routing](routing.md) — shift traffic between versions
+
 ## Troubleshooting
 
 Deploy never becomes ready, pods pending, image pull errors — see

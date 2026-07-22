@@ -70,6 +70,17 @@ flint route mistral --show            # current split
 Run `flint <command> --help` for options. Add `--debug` for full tracebacks,
 `--verbose` for INFO logging.
 
+## Examples
+
+Three runnable, end-to-end examples in [`examples/`](examples/) — `cd` in and
+run `./run.sh`:
+
+| Example | Needs | Shows |
+|---------|-------|-------|
+| [01-cpu-model](examples/01-cpu-model/) | any cluster, no GPU | deploy a small model on CPU, call it, read logs |
+| [02-gpu-model](examples/02-gpu-model/) | GPU nodes | a 7B model on vLLM with persistent weights |
+| [03-canary-rollout](examples/03-canary-rollout/) | any cluster + Envoy Gateway | shift traffic 100/0 → 90/10 → 50/50 → 0/100 and measure it |
+
 ## Docs
 
 **[flint-llm.github.io/flint](https://flint-llm.github.io/flint/)** — quickstarts

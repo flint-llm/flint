@@ -66,8 +66,17 @@ the practical choice for development, CI, and small models.
 flint deploy tinyllama --runtime ollama --wait
 ```
 
-- The **model name is an Ollama tag**, not an HF repo: `tinyllama`,
-  `llama3.2`, `qwen2.5:0.5b`. `--hf-repo` does not apply.
+- The **model name is an Ollama tag**, not an HF repo — `tinyllama`, `phi3`,
+  `gemma` — and `--hf-repo` does not apply.
+
+    !!! warning "Tags with `.` or `:` cannot be deployed in v0.1"
+
+        The model name becomes a Kubernetes resource name, so it must be a
+        DNS-1123 label: lowercase letters, digits and `-` only. Ollama tags
+        like `llama3.2` or `qwen2.5:0.5b` are rejected by `flint deploy`.
+        `flint serve` has no such restriction — local mode passes the name
+        straight to Ollama.
+
 - An init container pulls the model into an `emptyDir` before the server
   starts, so readiness means "model loaded and ready to answer".
 - That `emptyDir` is per-pod: every pod restart re-downloads the model. Fine

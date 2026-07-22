@@ -107,11 +107,24 @@ def iter_pod_logs(
             finally:
                 resp.release_conn()
         else:
+            # _preload_content=False is required, not an optimisation: with the
+            # default the client runs the body through deserialize(), which
+            # tries json.loads(), falls back to the raw bytes, and coerces them
+            # with str() -- turning the whole tail into a b'...\n...' repr.
+            # Read the raw body and decode it ourselves, as the follow path does.
             try:
-                text = v1.read_namespaced_pod_log(**kwargs)
+                resp = v1.read_namespaced_pod_log(_preload_content=False, **kwargs)
             except Exception as exc:
                 raise K8sError(
                     f"Failed to read logs for {pod_name!r}: {exc}"
                 ) from exc
-            if text:
-                yield str(text)
+            try:
+                raw = resp.data
+            finally:
+                resp.release_conn()
+            if raw:
+                yield (
+                    raw.decode("utf-8", errors="replace")
+                    if isinstance(raw, bytes)
+                    else str(raw)
+                )

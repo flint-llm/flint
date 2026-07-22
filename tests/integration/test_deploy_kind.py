@@ -175,6 +175,12 @@ def test_ollama_deploy_serves_real_inference() -> None:
         got_logs = _run("flint", "logs", _OLLAMA_MODEL, "-n", _OLLAMA_NS, "--tail", "20")
         assert got_logs.returncode == 0, got_logs.stderr
         assert got_logs.stdout.strip(), "expected some log output from flint logs"
+        # Logs must be decoded text, not a bytes repr. Asserting only that the
+        # output is non-empty let a b'...\n...' blob ship in 0.1.0.
+        assert not got_logs.stdout.lstrip().startswith("b'"), (
+            f"logs printed as a bytes repr:\n{got_logs.stdout[:200]}"
+        )
+        assert "\\n" not in got_logs.stdout, "logs contain escaped newlines"
     finally:
         if pf is not None and pf.poll() is None:
             pf.send_signal(signal.SIGTERM)

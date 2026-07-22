@@ -1,0 +1,31 @@
+# The Gateway that Flint attaches HTTPRoutes to.
+#
+# Flint never creates or owns a Gateway — your cluster does. `flint route`
+# writes an HTTPRoute whose parentRef points at one, defaulting to a Gateway
+# named "flint-gateway" in the model's namespace.
+#
+# This pair (GatewayClass + Gateway) is written for Envoy Gateway. For a
+# different implementation, change `controllerName` and `gatewayClassName` to
+# match it; nothing else here is implementation-specific.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: flint-eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: flint-gateway
+  namespace: NAMESPACE_PLACEHOLDER
+spec:
+  gatewayClassName: flint-eg
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
